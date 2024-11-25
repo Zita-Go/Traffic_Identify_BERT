@@ -1,0 +1,5 @@
+corpora/*
+datasets/*
+
+models/models/*
+models/lora_checkpoint/*
