@@ -1,5 +1,9 @@
 corpora/*
+!corpora/.gitkeep
 datasets/*
+!datasets/.gitkeep
 
 models/models/*
+!models/models/.gitkeep
 models/lora_checkpoint/*
+!models/lora_checkpoint/.gitkeep
