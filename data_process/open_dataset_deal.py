@@ -24,6 +24,7 @@ def reverse_dir2file():
             shutil.move(p + "\\" + file, path)
     return 0
 
+# 将每个pcap放入对应的类别的文件夹中，且将文件名称加入label
 def dataset_file2dir(file_path):
     for parent,dirs,files in os.walk(file_path):
         for file in files:
@@ -32,6 +33,7 @@ def dataset_file2dir(file_path):
             shutil.move(parent+"\\"+file,parent+"\\"+label_name+"\\")
     return 0
 
+# 将其他文件格式转换为pcap，比如旧的pcapng格式
 def file_2_pcap(source_file,target_file):
     cmd = "I:\\tshark.exe -F pcap -r %s -w %s"
     command = cmd % (source_file,target_file)
@@ -54,10 +56,12 @@ def statistic_dataset_sample_count(data_path):
     
     temp = []
     for p,d,f in os.walk(data_path):
+        # 最外层时，将所有的子目录即标签记录下来
         if p == data_path:
             dataset_label.extend(d)
         elif f == []:
             
+            # 当目录是标签时，即是对应流量数据，统计其子目录或文件中的所有文件数
             if (p.split("\\")[-1] not in dataset_label):
                 continue
 

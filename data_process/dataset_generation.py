@@ -111,9 +111,11 @@ def get_burst_feature(label_pcap, payload_len):
             if packet_index == 0:
                 burst_data_string += packet_string
             else:
+                # 方向不同，表示burst结束
                 if packet_direction[packet_index] != packet_direction[packet_index - 1]:
                     
                     length = len(burst_data_string)
+                    # 分成两半，分别生成bigram
                     for string_txt in cut(burst_data_string, int(length / 2)):
                         burst_txt += bigram_generation(string_txt, packet_len=len(string_txt))
                         burst_txt += '\n'
@@ -375,14 +377,17 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
         if tls13:
             record_file = "I:\\ex_results\\picked_file_record"
             target_path = "I:\\ex_results\\packet_splitcap\\"
+            # 检查packet_splitcap目录下是否有文件
             if not os.path.getsize(target_path):
                 with open(record_file, 'r') as f:
+                    # 一次性读取整个文件，并以换行符分割。每一行表示一个文件路径
                     record_files = f.read().split('\n')
                 for file in record_files[:-2]:
                     current_path = target_path + file.split('\\')[5]
                     new_name = '_'.join(file.split('\\')[6:])
                     if not os.path.exists(current_path):
                         os.mkdir(current_path)
+                    # 将文件复制到packet_splitcap目录下
                     shutil.copyfile(file, os.path.join(current_path, new_name))
 
         for dir in label_name_list:
@@ -393,9 +398,11 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                         session_path = (split_cap(pcap_path, p + "\\" + file, file.split(".")[-2], dir, dataset_level = dataset_level))
                     session_pcap_path[dir] = pcap_path + "\\splitcap\\" + dir
                 else:
+                    # 每个类别目录下还有file.split(".")[-2]的目录，其中放的是会话的pcap文件
                     session_pcap_path[dir] = pcap_path + dir
         break
 
+    # 将文本标签转化为数字标签
     label_id = {}
     for index in range(len(label_name_list)):
         label_id[label_name_list[index]] = index
@@ -403,7 +410,9 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
     r_file_record = []
     print("\nBegin to generate features.")
 
+    # 计数器，从第0个类别开始
     label_count = 0
+    # 遍历每个类别
     for key in tqdm.tqdm(session_pcap_path.keys()):
 
         if dataset_level == "flow":
@@ -417,6 +426,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                             os.remove(p + "\\" + file)
                             print("remove sample: %s for its size is less than 5 KB." % (p + "\\" + file))
 
+            # 预先在一个空的dataset中为每个类别生成一个特征字典
             if label_id[key] not in dataset:
                 dataset[label_id[key]] = {
                     "samples": 0,
@@ -431,6 +441,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                 for p, d, f in os.walk(session_pcap_path[key]):
                     for file in f:
                         current_file = p + "\\" + file
+                        # 过滤小流量，里面没有有效信息
                         if not os.path.getsize(current_file):
                             os.remove(current_file)
                             print("current pcap %s is 0KB and delete"%current_file)
@@ -462,8 +473,10 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
             continue
 
         target_all_files = [x[0] + "\\" + y for x in [(p, f) for p, d, f in os.walk(session_pcap_path[key])] for y in x[1]]
+        # 随机选取samples个文件
         r_files = random.sample(target_all_files, samples[label_count])
         label_count += 1
+        # 提取包或流的特征
         for r_f in r_files:
             if dataset_level == "flow":
                 feature_data = get_feature_flow(r_f, payload_len=payload_length, payload_pac=payload_packet)
@@ -475,6 +488,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
             r_file_record.append(r_f)
             dataset[label_id[key]]["samples"] += 1
             if len(dataset[label_id[key]]["payload"].keys()) > 0:
+                # payload，bigram格式，流为所有包的tcp payload拼接
                 dataset[label_id[key]]["payload"][str(dataset[label_id[key]]["samples"])] = \
                     feature_data[0]
                 if dataset_level == "flow":
@@ -487,6 +501,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                     dataset[label_id[key]]["message_type"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[4]
             else:
+                # 类别的第一个样本的特征
                 dataset[label_id[key]]["payload"]["1"] = feature_data[0]
                 if dataset_level == "flow":
                     dataset[label_id[key]]["length"]["1"] = feature_data[1]
@@ -494,6 +509,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                     dataset[label_id[key]]["direction"]["1"] = feature_data[3]
                     dataset[label_id[key]]["message_type"]["1"] = feature_data[4]
 
+    # 所有类别的总样本数
     all_data_number = 0
     for index in range(len(label_name_list)):
         print("%s\t%s\t%d"%(label_id[label_name_list[index]], label_name_list[index], dataset[label_id[label_name_list[index]]]["samples"]))
@@ -501,6 +517,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
     print("all\t%d"%(all_data_number))
 
     with open(dataset_save_path + "\\picked_file_record","w") as p_f:
+        # 写入文件名
         for i in r_file_record:
             p_f.write(i)
             p_f.write("\n")
@@ -513,6 +530,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
 def read_data_from_json(json_data, features, samples):
     X,Y = [], []
     ablation_flag = 0
+    # 遍历所有特征
     for feature_index in range(len(features)):
         x = []
         label_count = 0
@@ -536,9 +554,12 @@ def read_data_from_json(json_data, features, samples):
             else:
                 x_label = []
                 for sample_index in json_data[label][features[feature_index]].keys():
+                    # x_label的每一个元素对应一个样本的一个特征
                     x_label.append(json_data[label][features[feature_index]][sample_index])
+                # x的每一个元素对应一个特征
                 x.append(x_label)
             label_count += 1
+        # 3维，【特征，标签，样本】
         X.append(x)
     return X,Y
 

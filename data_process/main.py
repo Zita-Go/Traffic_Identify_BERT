@@ -49,17 +49,21 @@ def dataset_extract(model):
             return X_dataset, Y_dataset
     except Exception as e:
         print(e)
+        # 没有数据集则需要生成
         print("Dataset directory %s not exist.\nBegin to obtain new dataset."%(dataset_save_path + "dataset\\"))
 
+    # 获得特征和标签，都为列表格式，每个特征构成一个列表
     X,Y = dataset_generation.generation(pcap_path, samples, features, splitcap=False, dataset_save_path=dataset_save_path,dataset_level=dataset_level)
 
     dataset_statistic = [0] * _category
 
+    # 不再按照特征和标签分组，而是按照样本随机，X_payload为所有样本的payload，Y_all为所有样本的标签
     X_payload= []
     Y_all = []
     for app_label in Y:
         for label in app_label:
             Y_all.append(int(label))
+    # 统计每个类别的个数
     for label_id in range(_category):
         for label in Y_all:
             if label == label_id:
@@ -162,6 +166,7 @@ def models_deal(model, X_dataset, Y_dataset, x_payload_train, x_payload_test, x_
 
     return X_dataset, Y_dataset
 
+# 将数据存入tsv，格式为标签和payload
 def write_dataset_tsv(data,label,file_dir,type):
     dataset_file = [["label", "text_a"]]
     for index in range(len(label)):
@@ -215,6 +220,7 @@ def count_label_number(samples):
 if __name__ == '__main__':
     open_dataset_not_pcap = 0
     
+    # 将其他文件格式转换为pcap，比如旧的pcapng格式
     if open_dataset_not_pcap:
         #open_dataset_deal.dataset_file2dir(pcap_path)
         for p,d,f in os.walk(pcap_path):
@@ -224,6 +230,7 @@ if __name__ == '__main__':
                 if '_new.pcap' not in file:
                     os.remove(p+"\\"+file)
 
+    # 将每个pcap放入对应的类别的文件夹中
     file2dir = 0
     if file2dir:
         open_dataset_deal.dataset_file2dir(pcap_path)

@@ -9,9 +9,11 @@ def deal_label():
     lower_label.sort()
     return lower_label
 
+# 删去数据量少的类别样本，并将其标签大于等于105的样本标签改为被删掉的标签
 def deal_finetuning(excluding_label):
     dataset_path = "I:\\datasets\\cstnet-tls1.3\\"
     save_dataset_path = dataset_path
+    # 第一行是列名
     with open(dataset_path+"train_dataset.tsv",'r') as f:
         train_data = f.read().split('\n')[1:]
     with open(dataset_path+"valid_dataset.tsv",'r') as f:
@@ -65,6 +67,7 @@ def deal_finetuning(excluding_label):
         label_number -= 1
         count += 1
     
+    # 保存删去部分类别的数据
     with open(save_dataset_path+"train_dataset.tsv",'w') as f:
         f.write("label\ttext_a\n")
         for data in train_data:
@@ -80,6 +83,7 @@ def deal_finetuning(excluding_label):
             
     deal_result = input("please delete the last blank line in %s and input '1'"%(save_dataset_path+"test_dataset.tsv"))
     if deal_result == '1':
+        # 生成测试集的无标签数据
         unlabel_data(save_dataset_path+"test_dataset.tsv")
     return 0
 
