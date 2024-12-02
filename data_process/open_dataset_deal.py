@@ -29,7 +29,8 @@ def dataset_file2dir(file_path):
     for parent,dirs,files in os.walk(file_path):
         for file in files:
             label_name = file.split(".pcap")[0]
-            os.mkdir(parent+"\\"+label_name)
+            if not os.path.exists(parent+"\\"+label_name):
+                os.mkdir(parent+"\\"+label_name)
             shutil.move(parent+"\\"+file,parent+"\\"+label_name+"\\")
     return 0
 

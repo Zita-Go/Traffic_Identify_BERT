@@ -16,20 +16,24 @@ import random
 random.seed(40)
 
 # pcap_dir = "I:\\dataset\\"
-pcap_dir = 'D:/Users/ZitaGo/PycharmProjects/Transaction analysis/traffic identification/ET-BERT-main/datasets/coin_data/ltc_tshark'
+pcap_dir = 'datasets\\blockchain_traffic\\pcap\\'
 tls_date = [20210301,20210808]
 pcap_name = "app_A.pcap"
 #pcap_name = "merge.pcap"
-tls13_name = '.cap'
+pcap_flag = '.pcap'
 
 # word_dir = "I:/corpora/"
 # word_name = "encrypted_tls13_burst.txt"
-word_dir = 'D:/Users/ZitaGo/PycharmProjects/Transaction analysis/traffic identification/ET-BERT-main/datasets/test_corpora/'
-word_name = 'ltc_data.txt'
-vocab_dir = 'D:/Users/ZitaGo/PycharmProjects/Transaction analysis/traffic identification/ET-BERT-main/datasets/test_models/'
-vocab_name = "ltc_vocab_all.txt"
 # vocab_dir = "I:/models/"
 # vocab_name = "encryptd_vocab_all.txt"
+
+# 区块链流量数据集
+word_dir = 'corpora\\'
+word_name = 'blockchain_traffic_data.txt'
+vocab_dir = 'models\\'
+vocab_name = "blockchain_traffic_vocab_all.txt"
+dataset_level = 'burst'
+splitpcap_path = f"datasets\\blockchain_traffic\\{dataset_level}\\splitcap\\"
 
 
 # 将多个时间的pcap包文件夹处理并拼接起来
@@ -49,7 +53,7 @@ def pcap_preprocess():
 
 
 # 单个pcap包处理，被pcap_preprocess调用
-def preprocess(pcap_dir):
+def preprocess(pcap_dir, dataset_level='packet'):
     print("now pre-process pcap_dir is %s"%pcap_dir)
     
     packet_num = 0
@@ -59,7 +63,7 @@ def preprocess(pcap_dir):
     for parent,dirs,files in os.walk(pcap_dir):
         for file in files:
             # pcapng格式是老pcap格式
-            if "pcapng" not in file and tls13_name in file:
+            if "pcapng" not in file and pcap_flag in file:
                 n += 1
                 pcap_name = parent + "\\" + file
                 print("No.%d pacp is processed ... %s ..."%(n,file))
@@ -108,6 +112,8 @@ def preprocess(pcap_dir):
                 for words in words_txt:
                     result_file.write(words)
                 result_file.close()
+
+                split_cap(pcap_name, splitpcap_path, dataset_level)
     print("finish preprocessing %d pcaps"%n)
     return packet_num
 
@@ -224,14 +230,19 @@ def read_pcap_flow(pcap_file):
             flow_data_string += bigram_generation(packet_string)
     return flow_data_string
 
-def split_cap(pcap_file,pcap_name):
-    cmd = "I:\\SplitCap.exe -r %s -s session -o I:\\split_pcaps\\" + pcap_name
+def split_cap(pcap_file, pcap_path, dataset_level = 'packet'):
+    if not os.path.exists(pcap_path):
+        os.makedirs(pcap_path)
+    if dataset_level == 'packet':
+        cmd = "D:/Users/ZitaGo/Downloads/SplitCap.exe -r %s -s packets 1 -o " + pcap_path
+    elif dataset_level =='flow' or dataset_level == 'burst':
+        cmd = "D:/Users/ZitaGo/Downloads/SplitCap.exe -r %s -s session -o " + pcap_path
     command = cmd%pcap_file
     os.system(command)
     return 0
 
 if __name__ == '__main__':
-    preprocess(pcap_dir)
+    preprocess(pcap_dir, dataset_level)
 
     # build vocab
     build_BPE()

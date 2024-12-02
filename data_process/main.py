@@ -5,7 +5,6 @@ import numpy as np
 import json
 import os
 import time
-import xlrd
 import pickle
 from sklearn.model_selection import StratifiedShuffleSplit
 import pandas as pd
@@ -21,16 +20,28 @@ import dataset_generation
 import data_preprocess
 import open_dataset_deal
 
-_category = 120 # dataset class
-dataset_dir = "I:\\datasets\\" # the path to save dataset for dine-tuning
+_category = 7 # dataset class
+# 此目录用于存放微调用的数据集。其与dataset_save_path不同，dataset_save_path分开存放特征和标签，且格式为npy文件，而此目录存放的是合并后的特征和标签，格式为tsv文件。
+# dataset_dir = "I:\\datasets\\" # the path to save dataset for dine-tuning
 
-# 分别表示，原始数据地址、处理后数据存放地址、
-pcap_path, dataset_save_path, samples, features, dataset_level = "I:\\cstnet-tls1.3\\packet\\splitcap\\", "I:\\cstnet-tls1.3\\packet\\result\\", [5000], ["payload"], "packet"
+
+# 分别表示，原始数据地址、处理后数据存放地址、所有类别的最大样本数、特征选取、流量识别维度
+# pcap_path, dataset_save_path, samples, features, dataset_level = "I:\\cstnet-tls1.3\\packet\\splitcap\\", "I:\\cstnet-tls1.3\\packet\\result\\", [5000], ["payload"], "packet"
+
+samples = [5000]
+features = ["payload", "length", "time", "syn", "ack", "fin", "rst", "psh", "urg"]
+dataset_level = "burst"
+dataset_dir = f"datasets\\blockchain_traffic\\{dataset_level}\\"
+pcap_path = f"datasets\\blockchain_traffic\\{dataset_level}\\splitcap\\"
+dataset_save_path = f"datasets\\blockchain_traffic\\{dataset_level}\\processed_data\\"
 
 def dataset_extract(model):
     
     X_dataset = {}
     Y_dataset = {}
+
+    if not os.path.exists(dataset_save_path):
+        os.mkdir(dataset_save_path)
 
     try:
         if os.listdir(dataset_save_path + "dataset\\"):
@@ -235,7 +246,7 @@ if __name__ == '__main__':
     if file2dir:
         open_dataset_deal.dataset_file2dir(pcap_path)
 
-    splitcap_finish = 0
+    splitcap_finish = 1
     # samples是一个列表，表示所有类别流量的样本数
     if splitcap_finish:
         samples = count_label_number(samples)

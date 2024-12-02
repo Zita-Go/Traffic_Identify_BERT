@@ -4,7 +4,6 @@
 import os
 import sys
 import copy
-import xlrd
 import json
 import tqdm
 import shutil
@@ -20,8 +19,10 @@ from flowcontainer.extractor import extract
 
 random.seed(40)
 
-word_dir = "I:/corpora/"
-word_name = "encrypted_burst.txt"
+# word_dir = "I:/corpora/"
+# word_name = "encrypted_burst.txt"
+word_dir = "corpora/"
+word_name = "blockchain_traffic_burst.txt"
 
 def convert_pcapng_2_pcap(pcapng_path, pcapng_file, output_path):
     
@@ -135,6 +136,138 @@ def get_burst_feature(label_pcap, payload_len):
         with open(word_dir + word_name,'a') as f:
             f.write(burst_txt)
     return 0
+
+def get_feature_bursts_with_empty_payload(label_pcap, payload_len):
+    pass
+
+def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
+    feature_data = []
+    
+    packets = scapy.rdpcap(label_pcap)
+
+    # 提取bursts特征，包括包方向、包长度（payload长度）、包时间、6个标志位
+    feature_result = extract(label_pcap, filter='tcp', extension=['tcp.flags.syn', 'tcp.flags.ack', 'tcp.flags.fin', 'tcp.flags.reset', 'tcp.flags.push', 'tcp.flags.urg', 'data'])
+    
+    # 提取包信息
+    for key in feature_result.keys():
+        value = feature_result[key]
+        packet_direction = [x // abs(x) for x in value.payload_lengths]
+        packet_time = value.payload_timestamps
+        packet_length = value.payload_lengths
+        packet_syn = value.extension['tcp.flags.syn']
+        packet_ack = value.extension['tcp.flags.ack']
+        packet_fin = value.extension['tcp.flags.fin']
+        packet_reset = value.extension['tcp.flags.reset']
+        packet_push = value.extension['tcp.flags.push']
+        packet_urg = value.extension['tcp.flags.urg']
+        packet_data = value.extension['data']
+
+    bursts_length = []
+    bursts_time = []
+    bursts_direction = []
+    bursts_data = []
+    bursts_syn = []
+    bursts_ack = []
+    bursts_fin = []
+    bursts_reset = []
+    bursts_push = []
+    bursts_urg = []
+
+
+    data_dict = {}
+    
+    if len(packet_direction) == len(packets):
+        burst_length = []
+        burst_time = []
+        burst_direction = []
+        burst_data = []
+        burst_syn = []
+        burst_ack = []
+        burst_fin = []
+        burst_reset = []
+        burst_push = []
+        burst_urg = []
+
+        # 分割burst
+        for packet_index in range(len(packet_direction)):
+            if packet_index == 0:
+                burst_length.append(packet_length[packet_index])
+                burst_time.append(packet_time[packet_index])
+                burst_direction.append(packet_direction[packet_index])
+                burst_data.append(bigram_generation(packet_data[packet_index], packet_len=payload_len, flag = True))
+                burst_syn.append(1 if packet_syn[packet_index] == 'True' else 0)
+                burst_ack.append(1 if packet_ack[packet_index] == 'True' else 0)
+                burst_fin.append(1 if packet_fin[packet_index] == 'True' else 0)
+                burst_reset.append(1 if packet_reset[packet_index] == 'True' else 0)
+                burst_push.append(1 if packet_push[packet_index] == 'True' else 0)
+                burst_urg.append(1 if packet_urg[packet_index] == 'True' else 0)
+            else:
+                if packet_direction[packet_index] != packet_direction[packet_index - 1]:
+                    bursts_length.append(burst_length.copy())
+                    bursts_time.append(burst_time.copy())
+                    bursts_direction.append(burst_direction.copy())
+                    bursts_data.append(burst_data.copy())
+                    bursts_syn.append(burst_syn.copy())
+                    bursts_ack.append(burst_ack.copy())
+                    bursts_fin.append(burst_fin.copy())
+                    bursts_reset.append(burst_reset.copy())
+                    bursts_push.append(burst_push.copy())
+                    bursts_urg.append(burst_urg.copy())
+
+                    burst_length = []
+                    burst_time = []
+                    burst_direction = []
+                    burst_data = []
+                    burst_syn = []
+                    burst_ack = []
+                    burst_fin = []
+                    burst_reset = []
+                    burst_push = []
+                    burst_urg = []
+                
+                if len(burst_length) < payload_pac:
+                    burst_length.append(packet_length[packet_index])
+                    burst_time.append(packet_time[packet_index])
+                    burst_direction.append(packet_direction[packet_index])
+                    burst_data.append(bigram_generation(packet_data[packet_index], packet_len=payload_len, flag = True))
+                    burst_syn.append(1 if packet_syn[packet_index] == 'True' else 0)
+                    burst_ack.append(1 if packet_ack[packet_index] == 'True' else 0)
+                    burst_fin.append(1 if packet_fin[packet_index] == 'True' else 0)
+                    burst_reset.append(1 if packet_reset[packet_index] == 'True' else 0)                    
+                    burst_push.append(1 if packet_push[packet_index] == 'True' else 0)
+                    burst_urg.append(1 if packet_urg[packet_index] == 'True' else 0)
+
+                if packet_index == len(packet_direction) - 1:
+                    bursts_length.append(burst_length.copy())
+                    bursts_time.append(burst_time.copy())
+                    bursts_direction.append(burst_direction.copy())
+                    bursts_data.append(burst_data.copy())                    
+                    bursts_syn.append(burst_syn.copy())
+                    bursts_ack.append(burst_ack.copy())
+                    bursts_fin.append(burst_fin.copy())
+                    bursts_reset.append(burst_reset.copy())
+                    bursts_push.append(burst_push.copy())
+                    bursts_urg.append(burst_urg.copy())
+
+        
+    feature_data.append(bursts_data)
+    feature_data.append(bursts_length)
+    feature_data.append(bursts_time)
+    # feature_data.append(bursts_direction)
+    feature_data.append(bursts_syn)
+    feature_data.append(bursts_ack)
+    feature_data.append(bursts_fin)
+    feature_data.append(bursts_reset)
+    feature_data.append(bursts_push)
+    feature_data.append(bursts_urg)
+
+    # 随机抽取samples_num个bursts
+    if len(bursts_data) > samples_num:
+        bursts_index = random.sample(range(len(bursts_data)), samples_num)
+        feature_data = [[item[index] for index in bursts_index] for item in feature_data]
+
+    return feature_data
+        
 
 def get_feature_packet(label_pcap,payload_len):
     feature_data = []
@@ -375,8 +508,8 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
 
         tls13 = 0
         if tls13:
-            record_file = "I:\\ex_results\\picked_file_record"
-            target_path = "I:\\ex_results\\packet_splitcap\\"
+            record_file = dataset_save_path + "picked_file_record"
+            target_path = dataset_save_path + "packet_splitcap\\"
             # 检查packet_splitcap目录下是否有文件
             if not os.path.getsize(target_path):
                 with open(record_file, 'r') as f:
@@ -436,6 +569,31 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                     "direction": {},
                     "message_type": {}
                 }
+        elif dataset_level == "burst":
+            if splitcap:
+                for p, d, f in os.walk(session_pcap_path[key]):
+                    for file in f:
+                        file_size = float(size_format(os.path.getsize(p + "\\" + file)))
+                        # 2KB
+                        if file_size < 5:
+                            os.remove(p + "\\" + file)
+                            print("remove sample: %s for its size is less than 5 KB." % (p + "\\" + file))
+
+            # 预先在一个空的dataset中为每个类别生成一个特征字典
+            if label_id[key] not in dataset:
+                dataset[label_id[key]] = {
+                    "samples": 0,
+                    "payload": {},
+                    "length": {},
+                    "time": {},
+                    # "direction": {},
+                    "syn": {},
+                    "ack": {},
+                    "fin": {},
+                    "rst": {},
+                    "psh": {},
+                    "urg": {}
+                }
         elif dataset_level == "packet":
             if splitcap:# not splitcap
                 for p, d, f in os.walk(session_pcap_path[key]):
@@ -482,16 +640,22 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                 feature_data = get_feature_flow(r_f, payload_len=payload_length, payload_pac=payload_packet)
             elif dataset_level == "packet":
                 feature_data = get_feature_packet(r_f, payload_len=payload_length)
+            elif dataset_level == "burst":
+                feature_data = get_feature_bursts(r_f, payload_len=payload_length, payload_pac=payload_packet, samples_num=max(samples))
 
             if feature_data == -1:
                 continue
             r_file_record.append(r_f)
-            dataset[label_id[key]]["samples"] += 1
+
+            # burst需要从flow中分割出多个包，所以这里不用更新samples
+            if dataset_level != "burst":
+                dataset[label_id[key]]["samples"] += 1
             if len(dataset[label_id[key]]["payload"].keys()) > 0:
                 # payload，bigram格式，流为所有包的tcp payload拼接
-                dataset[label_id[key]]["payload"][str(dataset[label_id[key]]["samples"])] = \
-                    feature_data[0]
-                if dataset_level == "flow":
+                if dataset_level == "packet":
+                    dataset[label_id[key]]["payload"][str(dataset[label_id[key]]["samples"])] = \
+                        feature_data[0]
+                elif dataset_level == "flow":
                     dataset[label_id[key]]["length"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[1]
                     dataset[label_id[key]]["time"][str(dataset[label_id[key]]["samples"])] = \
@@ -500,6 +664,27 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                         feature_data[3]
                     dataset[label_id[key]]["message_type"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[4]
+                elif dataset_level == "burst":
+                    for burst_index in range(len(feature_data[0])):
+                        dataset[label_id[key]]["samples"] += 1
+                        dataset[label_id[key]]["payload"][str(dataset[label_id[key]]["samples"])] = \
+                            feature_data[0][burst_index]
+                        dataset[label_id[key]]["length"][str(dataset[label_id[key]]["samples"])] = \
+                            feature_data[1][burst_index]
+                        dataset[label_id[key]]["time"][str(dataset[label_id[key]]["samples"])] = \
+                            feature_data[2][burst_index]
+                        dataset[label_id[key]]["syn"][str(dataset[label_id[key]]["samples"])] = \
+                            feature_data[3][burst_index]
+                        dataset[label_id[key]]["ack"][str(dataset[label_id[key]]["samples"])] = \
+                            feature_data[4][burst_index]
+                        dataset[label_id[key]]["fin"][str(dataset[label_id[key]]["samples"])] = \
+                            feature_data[5][burst_index]
+                        dataset[label_id[key]]["rst"][str(dataset[label_id[key]]["samples"])] = \
+                            feature_data[6][burst_index]
+                        dataset[label_id[key]]["psh"][str(dataset[label_id[key]]["samples"])] = \
+                            feature_data[7][burst_index]
+                        dataset[label_id[key]]["urg"][str(dataset[label_id[key]]["samples"])] = \
+                            feature_data[8][burst_index]
             else:
                 # 类别的第一个样本的特征
                 dataset[label_id[key]]["payload"]["1"] = feature_data[0]
@@ -517,7 +702,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
     print("all\t%d"%(all_data_number))
 
     with open(dataset_save_path + "\\picked_file_record","w") as p_f:
-        # 写入文件名
+        # 写入文件名路径
         for i in r_file_record:
             p_f.write(i)
             p_f.write("\n")

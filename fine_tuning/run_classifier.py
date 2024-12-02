@@ -2,7 +2,7 @@
 This script provides an exmaple to wrap UER-py for classification.
 """
 import sys
-sys.path.append('D:/Users/ZitaGo/PycharmProjects/Transaction analysis/traffic identification/ET-BERT-main')
+# sys.path.append('D:/Users/ZitaGo/PycharmProjects/Transaction analysis/traffic identification/ET-BERT-main')
 
 import random
 import argparse
