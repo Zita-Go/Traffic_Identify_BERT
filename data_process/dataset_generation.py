@@ -146,21 +146,30 @@ def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
     packets = scapy.rdpcap(label_pcap)
 
     # 提取bursts特征，包括包方向、包长度（payload长度）、包时间、6个标志位
-    feature_result = extract(label_pcap, filter='tcp', extension=['tcp.flags.syn', 'tcp.flags.ack', 'tcp.flags.fin', 'tcp.flags.reset', 'tcp.flags.push', 'tcp.flags.urg', 'data'])
-    
+    feature_result = extract(label_pcap, filter='tcp', extension=['tcp.flags.syn', 'tcp.flags.ack', 'tcp.flags.fin', 'tcp.flags.reset', 'tcp.flags.push', 'tcp.flags.urg', 'tcp.payload'])
+    if len(feature_result.keys()) == 0 or 'TCP' not in label_pcap:
+        return -1
     # 提取包信息
     for key in feature_result.keys():
         value = feature_result[key]
-        packet_direction = [x // abs(x) for x in value.payload_lengths]
-        packet_time = value.payload_timestamps
         packet_length = value.payload_lengths
-        packet_syn = value.extension['tcp.flags.syn']
-        packet_ack = value.extension['tcp.flags.ack']
-        packet_fin = value.extension['tcp.flags.fin']
-        packet_reset = value.extension['tcp.flags.reset']
-        packet_push = value.extension['tcp.flags.push']
-        packet_urg = value.extension['tcp.flags.urg']
-        packet_data = value.extension['data']
+        print(key)
+        # 所有包的payload长度都为0，说明没有有效信息
+        if len(packet_length) == 0 or 'tcp' not in key:
+            return -1
+        packet_data = value.extension['tcp.payload']
+        # payload长度不为0的包索引
+        packet_index = [data[1] for data in packet_data]
+        packet_time = [value.payload_timestamps[idx] for idx in packet_index]
+        packet_syn = [value.extension['tcp.flags.syn'][idx][0] for idx in packet_index]
+        packet_ack = [value.extension['tcp.flags.ack'][idx][0] for idx in packet_index]
+        packet_fin = [value.extension['tcp.flags.fin'][idx][0] for idx in packet_index]
+        packet_reset = [value.extension['tcp.flags.reset'][idx][0] for idx in packet_index]
+        packet_push = [value.extension['tcp.flags.push'][idx][0] for idx in packet_index]
+        packet_urg = [value.extension['tcp.flags.urg'][idx][0] for idx in packet_index]
+        packet_data = [data[0] for data in packet_data]
+        packet_direction = [x // abs(x) for x in value.payload_lengths]
+        
 
     bursts_length = []
     bursts_time = []
@@ -176,21 +185,56 @@ def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
 
     data_dict = {}
     
-    if len(packet_direction) == len(packets):
-        burst_length = []
-        burst_time = []
-        burst_direction = []
-        burst_data = []
-        burst_syn = []
-        burst_ack = []
-        burst_fin = []
-        burst_reset = []
-        burst_push = []
-        burst_urg = []
+    # if len(packet_direction) == len(packets):
+    burst_length = []
+    burst_time = []
+    burst_direction = []
+    burst_data = []
+    burst_syn = []
+    burst_ack = []
+    burst_fin = []
+    burst_reset = []
+    burst_push = []
+    burst_urg = []
 
-        # 分割burst
-        for packet_index in range(len(packet_direction)):
-            if packet_index == 0:
+    # 分割burst
+    for packet_index in range(len(packet_direction)):
+        if packet_index == 0:
+            burst_length.append(packet_length[packet_index])
+            burst_time.append(packet_time[packet_index])
+            burst_direction.append(packet_direction[packet_index])
+            burst_data.append(bigram_generation(packet_data[packet_index], packet_len=payload_len, flag = True))
+            burst_syn.append(1 if packet_syn[packet_index] == 'True' else 0)
+            burst_ack.append(1 if packet_ack[packet_index] == 'True' else 0)
+            burst_fin.append(1 if packet_fin[packet_index] == 'True' else 0)
+            burst_reset.append(1 if packet_reset[packet_index] == 'True' else 0)
+            burst_push.append(1 if packet_push[packet_index] == 'True' else 0)
+            burst_urg.append(1 if packet_urg[packet_index] == 'True' else 0)
+        else:
+            if packet_direction[packet_index] != packet_direction[packet_index - 1]:
+                bursts_length.append(burst_length.copy())
+                bursts_time.append(burst_time.copy())
+                bursts_direction.append(burst_direction.copy())
+                bursts_data.append(burst_data.copy())
+                bursts_syn.append(burst_syn.copy())
+                bursts_ack.append(burst_ack.copy())
+                bursts_fin.append(burst_fin.copy())
+                bursts_reset.append(burst_reset.copy())
+                bursts_push.append(burst_push.copy())
+                bursts_urg.append(burst_urg.copy())
+
+                burst_length = []
+                burst_time = []
+                burst_direction = []
+                burst_data = []
+                burst_syn = []
+                burst_ack = []
+                burst_fin = []
+                burst_reset = []
+                burst_push = []
+                burst_urg = []
+            
+            if len(burst_length) < payload_pac:
                 burst_length.append(packet_length[packet_index])
                 burst_time.append(packet_time[packet_index])
                 burst_direction.append(packet_direction[packet_index])
@@ -198,56 +242,21 @@ def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
                 burst_syn.append(1 if packet_syn[packet_index] == 'True' else 0)
                 burst_ack.append(1 if packet_ack[packet_index] == 'True' else 0)
                 burst_fin.append(1 if packet_fin[packet_index] == 'True' else 0)
-                burst_reset.append(1 if packet_reset[packet_index] == 'True' else 0)
+                burst_reset.append(1 if packet_reset[packet_index] == 'True' else 0)                    
                 burst_push.append(1 if packet_push[packet_index] == 'True' else 0)
                 burst_urg.append(1 if packet_urg[packet_index] == 'True' else 0)
-            else:
-                if packet_direction[packet_index] != packet_direction[packet_index - 1]:
-                    bursts_length.append(burst_length.copy())
-                    bursts_time.append(burst_time.copy())
-                    bursts_direction.append(burst_direction.copy())
-                    bursts_data.append(burst_data.copy())
-                    bursts_syn.append(burst_syn.copy())
-                    bursts_ack.append(burst_ack.copy())
-                    bursts_fin.append(burst_fin.copy())
-                    bursts_reset.append(burst_reset.copy())
-                    bursts_push.append(burst_push.copy())
-                    bursts_urg.append(burst_urg.copy())
 
-                    burst_length = []
-                    burst_time = []
-                    burst_direction = []
-                    burst_data = []
-                    burst_syn = []
-                    burst_ack = []
-                    burst_fin = []
-                    burst_reset = []
-                    burst_push = []
-                    burst_urg = []
-                
-                if len(burst_length) < payload_pac:
-                    burst_length.append(packet_length[packet_index])
-                    burst_time.append(packet_time[packet_index])
-                    burst_direction.append(packet_direction[packet_index])
-                    burst_data.append(bigram_generation(packet_data[packet_index], packet_len=payload_len, flag = True))
-                    burst_syn.append(1 if packet_syn[packet_index] == 'True' else 0)
-                    burst_ack.append(1 if packet_ack[packet_index] == 'True' else 0)
-                    burst_fin.append(1 if packet_fin[packet_index] == 'True' else 0)
-                    burst_reset.append(1 if packet_reset[packet_index] == 'True' else 0)                    
-                    burst_push.append(1 if packet_push[packet_index] == 'True' else 0)
-                    burst_urg.append(1 if packet_urg[packet_index] == 'True' else 0)
-
-                if packet_index == len(packet_direction) - 1:
-                    bursts_length.append(burst_length.copy())
-                    bursts_time.append(burst_time.copy())
-                    bursts_direction.append(burst_direction.copy())
-                    bursts_data.append(burst_data.copy())                    
-                    bursts_syn.append(burst_syn.copy())
-                    bursts_ack.append(burst_ack.copy())
-                    bursts_fin.append(burst_fin.copy())
-                    bursts_reset.append(burst_reset.copy())
-                    bursts_push.append(burst_push.copy())
-                    bursts_urg.append(burst_urg.copy())
+            if packet_index == len(packet_direction) - 1:
+                bursts_length.append(burst_length.copy())
+                bursts_time.append(burst_time.copy())
+                bursts_direction.append(burst_direction.copy())
+                bursts_data.append(burst_data.copy())                    
+                bursts_syn.append(burst_syn.copy())
+                bursts_ack.append(burst_ack.copy())
+                bursts_fin.append(burst_fin.copy())
+                bursts_reset.append(burst_reset.copy())
+                bursts_push.append(burst_push.copy())
+                bursts_urg.append(burst_urg.copy())
 
         
     feature_data.append(bursts_data)
@@ -430,6 +439,14 @@ def get_feature_flow(label_pcap, payload_len, payload_pac):
             packet_direction.append(1)
         else:
             packet_direction.append(-1)
+    # 将时间变为相对第一个包的时间
+    first_time = packet_time[0][0]
+    for i in range(len(packet_time[0])):
+        packet_time[0][i] = packet_time[0][i] - first_time
+    # 将包长取消负号
+    for i in range(len(packet_length[0])):
+        if packet_length[0][i] < 0:
+            packet_length[0][i] = -packet_length[0][i]
 
     packet_index = 0
     for packet in packets:
@@ -650,49 +667,49 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
             # burst需要从flow中分割出多个包，所以这里不用更新samples
             if dataset_level != "burst":
                 dataset[label_id[key]]["samples"] += 1
-            if len(dataset[label_id[key]]["payload"].keys()) > 0:
-                # payload，bigram格式，流为所有包的tcp payload拼接
-                if dataset_level == "packet":
+            # if len(dataset[label_id[key]]["payload"].keys()) > 0:
+            # payload，bigram格式，流为所有包的tcp payload拼接
+            if dataset_level == "packet":
+                dataset[label_id[key]]["payload"][str(dataset[label_id[key]]["samples"])] = \
+                    feature_data[0]
+            elif dataset_level == "flow":
+                dataset[label_id[key]]["length"][str(dataset[label_id[key]]["samples"])] = \
+                    feature_data[1]
+                dataset[label_id[key]]["time"][str(dataset[label_id[key]]["samples"])] = \
+                    feature_data[2]
+                dataset[label_id[key]]["direction"][str(dataset[label_id[key]]["samples"])] = \
+                    feature_data[3]
+                dataset[label_id[key]]["message_type"][str(dataset[label_id[key]]["samples"])] = \
+                    feature_data[4]
+            elif dataset_level == "burst":
+                for burst_index in range(len(feature_data[0])):
+                    dataset[label_id[key]]["samples"] += 1
                     dataset[label_id[key]]["payload"][str(dataset[label_id[key]]["samples"])] = \
-                        feature_data[0]
-                elif dataset_level == "flow":
+                        feature_data[0][burst_index]
                     dataset[label_id[key]]["length"][str(dataset[label_id[key]]["samples"])] = \
-                        feature_data[1]
+                        feature_data[1][burst_index]
                     dataset[label_id[key]]["time"][str(dataset[label_id[key]]["samples"])] = \
-                        feature_data[2]
-                    dataset[label_id[key]]["direction"][str(dataset[label_id[key]]["samples"])] = \
-                        feature_data[3]
-                    dataset[label_id[key]]["message_type"][str(dataset[label_id[key]]["samples"])] = \
-                        feature_data[4]
-                elif dataset_level == "burst":
-                    for burst_index in range(len(feature_data[0])):
-                        dataset[label_id[key]]["samples"] += 1
-                        dataset[label_id[key]]["payload"][str(dataset[label_id[key]]["samples"])] = \
-                            feature_data[0][burst_index]
-                        dataset[label_id[key]]["length"][str(dataset[label_id[key]]["samples"])] = \
-                            feature_data[1][burst_index]
-                        dataset[label_id[key]]["time"][str(dataset[label_id[key]]["samples"])] = \
-                            feature_data[2][burst_index]
-                        dataset[label_id[key]]["syn"][str(dataset[label_id[key]]["samples"])] = \
-                            feature_data[3][burst_index]
-                        dataset[label_id[key]]["ack"][str(dataset[label_id[key]]["samples"])] = \
-                            feature_data[4][burst_index]
-                        dataset[label_id[key]]["fin"][str(dataset[label_id[key]]["samples"])] = \
-                            feature_data[5][burst_index]
-                        dataset[label_id[key]]["rst"][str(dataset[label_id[key]]["samples"])] = \
-                            feature_data[6][burst_index]
-                        dataset[label_id[key]]["psh"][str(dataset[label_id[key]]["samples"])] = \
-                            feature_data[7][burst_index]
-                        dataset[label_id[key]]["urg"][str(dataset[label_id[key]]["samples"])] = \
-                            feature_data[8][burst_index]
-            else:
-                # 类别的第一个样本的特征
-                dataset[label_id[key]]["payload"]["1"] = feature_data[0]
-                if dataset_level == "flow":
-                    dataset[label_id[key]]["length"]["1"] = feature_data[1]
-                    dataset[label_id[key]]["time"]["1"] = feature_data[2]
-                    dataset[label_id[key]]["direction"]["1"] = feature_data[3]
-                    dataset[label_id[key]]["message_type"]["1"] = feature_data[4]
+                        feature_data[2][burst_index]
+                    dataset[label_id[key]]["syn"][str(dataset[label_id[key]]["samples"])] = \
+                        feature_data[3][burst_index]
+                    dataset[label_id[key]]["ack"][str(dataset[label_id[key]]["samples"])] = \
+                        feature_data[4][burst_index]
+                    dataset[label_id[key]]["fin"][str(dataset[label_id[key]]["samples"])] = \
+                        feature_data[5][burst_index]
+                    dataset[label_id[key]]["rst"][str(dataset[label_id[key]]["samples"])] = \
+                        feature_data[6][burst_index]
+                    dataset[label_id[key]]["psh"][str(dataset[label_id[key]]["samples"])] = \
+                        feature_data[7][burst_index]
+                    dataset[label_id[key]]["urg"][str(dataset[label_id[key]]["samples"])] = \
+                        feature_data[8][burst_index]
+            # else:
+            #     # 类别的第一个样本的特征
+            #     dataset[label_id[key]]["payload"]["1"] = feature_data[0]
+            #     if dataset_level == "flow":
+            #         dataset[label_id[key]]["length"]["1"] = feature_data[1]
+            #         dataset[label_id[key]]["time"]["1"] = feature_data[2]
+            #         dataset[label_id[key]]["direction"]["1"] = feature_data[3]
+            #         dataset[label_id[key]]["message_type"]["1"] = feature_data[4]
 
     # 所有类别的总样本数
     all_data_number = 0
@@ -731,18 +748,23 @@ def read_data_from_json(json_data, features, samples):
                     else:
                         y = [label] * sample_num
                     Y.append(y)
-            if samples[label_count] < sample_num:
-                x_label = []
-                for sample_index in random.sample(list(json_data[label][features[feature_index]].keys()),1500):
-                    x_label.append(json_data[label][features[feature_index]][sample_index])
-                x.append(x_label)
-            else:
-                x_label = []
-                for sample_index in json_data[label][features[feature_index]].keys():
-                    # x_label的每一个元素对应一个样本的一个特征
-                    x_label.append(json_data[label][features[feature_index]][sample_index])
-                # x的每一个元素对应一个特征
-                x.append(x_label)
+            # if samples[label_count] < sample_num:
+            #     x_label = []
+            #     for sample_index in random.sample(list(json_data[label][features[feature_index]].keys()),1500):
+            #         x_label.append(json_data[label][features[feature_index]][sample_index])
+            #     x.append(x_label)
+            # else:
+            # x_label = []
+            for sample_index in json_data[label][features[feature_index]].keys():
+                # x_label的每一个元素对应一个样本的一个特征
+                feature_data = json_data[label][features[feature_index]][sample_index]
+                if isinstance(feature_data, list):
+                    x.append('|'.join(map(str, feature_data)))
+                    # x.append(json_data[label][features[feature_index]][sample_index])
+                else:
+                    x.append(json_data[label][features[feature_index]][sample_index])
+            # x的每一个元素对应一个特征
+            # x.append(x_label)
             label_count += 1
         # 3维，【特征，标签，样本】
         X.append(x)
@@ -758,11 +780,11 @@ def obtain_data(pcap_path, samples, features, dataset_save_path, json_data = Non
             dataset = json.load(f)
         X,Y = read_data_from_json(dataset,features,samples)
 
-    for index in range(len(X)):
-        if len(X[index]) != len(Y):
-            print("data and labels are not properly associated.")
-            print("x:%s\ty:%s"%(len(X[index]),len(Y)))
-            return -1
+    # for index in range(len(X)):
+    #     if len(X[index]) != len(Y):
+    #         print("data and labels are not properly associated.")
+    #         print("x:%s\ty:%s"%(len(X[index]),len(Y)))
+    #         return -1
     return X,Y
 
 def combine_dataset_json():

@@ -84,17 +84,25 @@ def dataset_extract(model):
         print("%s\t%d" % (index, dataset_statistic[index]))
     print("all\t%d" % (sum(dataset_statistic)))
 
-    for i in range(len(features)):
-        if features[i] == "payload":
-            for index_label in range(len(X[0])):
-                for index_sample in range(len(X[0][index_label])):
-                    X_payload.append(X[0][index_label][index_sample])
+    if len(features) == 1:
+        X_payload = X[0]
+        x_payload = np.array(X_payload)
+        dataset_label = np.array(Y_all)
+    elif len(features) > 1:
+        X_payload = X
+        x_payload = np.array(X_payload).T
+        dataset_label = np.array(Y_all)
+    else:
+        raise ValueError("No feature selected.")
+
+    # for i in range(len(features)):
+    #     if features[i] == "payload":
+    #         for index_label in range(len(X[0])):
+    #             for index_sample in range(len(X[0][index_label])):
+    #                 X_payload.append(X[0][index_label][index_sample])
 
     split_1 = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=41) 
     split_2 = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=42) 
-
-    x_payload = np.array(X_payload)
-    dataset_label = np.array(Y_all)
 
     x_payload_train = []
     y_train = []
@@ -179,9 +187,21 @@ def models_deal(model, X_dataset, Y_dataset, x_payload_train, x_payload_test, x_
 
 # 将数据存入tsv，格式为标签和payload
 def write_dataset_tsv(data,label,file_dir,type):
-    dataset_file = [["label", "text_a"]]
+    # 要保存的特征列名
+    with open(dataset_save_path + "\\dataset.json", "r") as f:
+        new_dataset = json.load(f)
+    dataset_file = [["label"] + [key for key in new_dataset[list(new_dataset.keys())[0]].keys() if key != "samples"]]
+    # dataset_file = [["label", "text_a"]]
+    if data.shape[1] != len(dataset_file[0])-1:
+        raise ValueError("The number of features is not equal to the number of columns in the dataset.json file.")
     for index in range(len(label)):
-        dataset_file.append([label[index], data[index]])
+        # 判断array维度
+        if len(data[index].shape) == 1:
+            dataset_file.append([label[index], data[index]])
+        elif len(data[index].shape) > 1:
+            dataset_file.append([label[index]] + list(data[index]))
+        else:
+            raise ValueError("No data found.")
     with open(file_dir + type + "_dataset.tsv", 'w',newline='') as f:
         tsv_w = csv.writer(f, delimiter='\t')
         tsv_w.writerows(dataset_file)
