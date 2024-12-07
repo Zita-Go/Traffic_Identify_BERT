@@ -29,7 +29,7 @@ _category = 7 # dataset class
 # pcap_path, dataset_save_path, samples, features, dataset_level = "I:\\cstnet-tls1.3\\packet\\splitcap\\", "I:\\cstnet-tls1.3\\packet\\result\\", [5000], ["payload"], "packet"
 
 samples = [5000]
-features = ["payload", "length", "time", "syn", "ack", "fin", "rst", "psh", "urg"]
+features = ["payload", "length", "time", "delta_time", "syn", "ack", "fin", "rst", "psh", "urg"]
 dataset_level = "burst"
 dataset_dir = f"datasets\\blockchain_traffic\\{dataset_level}\\"
 pcap_path = f"datasets\\blockchain_traffic\\{dataset_level}\\splitcap\\"
@@ -196,9 +196,9 @@ def write_dataset_tsv(data,label,file_dir,type):
         raise ValueError("The number of features is not equal to the number of columns in the dataset.json file.")
     for index in range(len(label)):
         # 判断array维度
-        if len(data[index].shape) == 1:
+        if len(data[index]) == 1:
             dataset_file.append([label[index], data[index]])
-        elif len(data[index].shape) > 1:
+        elif len(data[index]) > 1:
             dataset_file.append([label[index]] + list(data[index]))
         else:
             raise ValueError("No data found.")
