@@ -153,7 +153,6 @@ def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
     for key in feature_result.keys():
         value = feature_result[key]
         packet_length = value.payload_lengths
-        print(key)
         # 所有包的payload长度都为0，说明没有有效信息
         if len(packet_length) == 0 or 'tcp' not in key:
             return -1
@@ -169,10 +168,12 @@ def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
         packet_urg = [value.extension['tcp.flags.urg'][idx][0] for idx in packet_index]
         packet_data = [data[0] for data in packet_data]
         packet_direction = [x // abs(x) for x in value.payload_lengths]
+        packet_length = [abs(x) for x in packet_length]
         
 
     bursts_length = []
     bursts_time = []
+    bursts_delta_time = []
     bursts_direction = []
     bursts_data = []
     bursts_syn = []
@@ -213,7 +214,14 @@ def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
         else:
             if packet_direction[packet_index] != packet_direction[packet_index - 1]:
                 bursts_length.append(burst_length.copy())
+                # 计算相对于burst第一个包的时间戳
+                first_packet_time = burst_time[0]
+                burst_time = [time - first_packet_time for time in burst_time]
                 bursts_time.append(burst_time.copy())
+                # 计算包之间的时间间隔
+                burst_delta_time = [burst_time[i] - burst_time[i-1] for i in range(1, len(burst_time))]
+                burst_delta_time.insert(0, 0.0)
+                bursts_delta_time.append(burst_delta_time.copy())
                 bursts_direction.append(burst_direction.copy())
                 bursts_data.append(burst_data.copy())
                 bursts_syn.append(burst_syn.copy())
@@ -248,7 +256,15 @@ def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
 
             if packet_index == len(packet_direction) - 1:
                 bursts_length.append(burst_length.copy())
+                # 计算相对于burst第一个包的时间戳
+                first_packet_time = burst_time[0]
+                burst_time = [time - first_packet_time for time in burst_time]
                 bursts_time.append(burst_time.copy())
+                # 计算包之间的时间间隔
+                burst_delta_time = [burst_time[i] - burst_time[i-1] for i in range(1, len(burst_time))]
+                burst_delta_time.insert(0, 0.0)
+                bursts_delta_time.append(burst_delta_time.copy())
+                bursts_direction.append(burst_direction.copy())
                 bursts_direction.append(burst_direction.copy())
                 bursts_data.append(burst_data.copy())                    
                 bursts_syn.append(burst_syn.copy())
@@ -262,6 +278,7 @@ def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
     feature_data.append(bursts_data)
     feature_data.append(bursts_length)
     feature_data.append(bursts_time)
+    feature_data.append(bursts_delta_time)
     # feature_data.append(bursts_direction)
     feature_data.append(bursts_syn)
     feature_data.append(bursts_ack)
@@ -603,6 +620,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                     "payload": {},
                     "length": {},
                     "time": {},
+                    "delta_time": {},
                     # "direction": {},
                     "syn": {},
                     "ack": {},
@@ -690,18 +708,20 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                         feature_data[1][burst_index]
                     dataset[label_id[key]]["time"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[2][burst_index]
-                    dataset[label_id[key]]["syn"][str(dataset[label_id[key]]["samples"])] = \
+                    dataset[label_id[key]]["delta_time"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[3][burst_index]
-                    dataset[label_id[key]]["ack"][str(dataset[label_id[key]]["samples"])] = \
+                    dataset[label_id[key]]["syn"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[4][burst_index]
-                    dataset[label_id[key]]["fin"][str(dataset[label_id[key]]["samples"])] = \
+                    dataset[label_id[key]]["ack"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[5][burst_index]
-                    dataset[label_id[key]]["rst"][str(dataset[label_id[key]]["samples"])] = \
+                    dataset[label_id[key]]["fin"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[6][burst_index]
-                    dataset[label_id[key]]["psh"][str(dataset[label_id[key]]["samples"])] = \
+                    dataset[label_id[key]]["rst"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[7][burst_index]
-                    dataset[label_id[key]]["urg"][str(dataset[label_id[key]]["samples"])] = \
+                    dataset[label_id[key]]["psh"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[8][burst_index]
+                    dataset[label_id[key]]["urg"][str(dataset[label_id[key]]["samples"])] = \
+                        feature_data[9][burst_index]
             # else:
             #     # 类别的第一个样本的特征
             #     dataset[label_id[key]]["payload"]["1"] = feature_data[0]
