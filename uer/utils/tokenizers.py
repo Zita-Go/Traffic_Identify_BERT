@@ -229,10 +229,13 @@ class BertTokenizer(Tokenizer):
             split_tokens = encode_pieces(self.sp_model, text, return_unicode=False)
         else:
             split_tokens = []
+            # basic_tokenizer.tokenize返回的还是空格分隔后的列表
             for token in self.basic_tokenizer.tokenize(text):
+                # 对基本的token进行词表查找，添加#或UNK，返回的是token可能经过子区间切分的列表
                 for sub_token in self.wordpiece_tokenizer.tokenize(token):
                     split_tokens.append(sub_token)
 
+        # 最终返回的所有token经过分割和切分的列表
         return split_tokens
 
 
@@ -391,6 +394,7 @@ class WordpieceTokenizer(object):
                 end = len(chars)
                 cur_substr = None
                 while start < end:
+                    # 当chars没有在词表中，需要将抽取子区间
                     substr = "".join(chars[start:end])
                     if start > 0:
                         substr = "##" + six.ensure_str(substr)

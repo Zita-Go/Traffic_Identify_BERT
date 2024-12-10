@@ -27,7 +27,8 @@ class Classifier(nn.Module):
     def __init__(self, args):
         super(Classifier, self).__init__()
         self.embedding = str2embedding[args.embedding](args, len(args.tokenizer.vocab))
-        self.encoder = str2encoder[args.encoder](args)
+        self.encoder1 = str2encoder[args.encoder1](args)
+        self.encoder2 = str2encoder[args.encoder2](args)
         self.labels_num = args.labels_num
         self.pooling = args.pooling
         self.soft_targets = args.soft_targets
@@ -173,6 +174,43 @@ def read_dataset(args, path):
                 dataset.append((src, tgt, seg, soft_tgt))
             else:
                 dataset.append((src, tgt, seg))
+
+    return dataset
+
+# 包含除payload之外的其他特征
+def read_dataset_with_other_features(args, path):
+    dataset, columns = [], {}
+    with open(path, mode="r", encoding="utf-8") as f:
+        seq_payload = []
+        seq_attr = []
+        for line_id, line in enumerate(f):
+            if line_id == 0:
+                for i, column_name in enumerate(line.strip().split("\t")):
+                    columns[column_name] = i
+                continue
+            # 删去line的-1相当于strip
+            line = line[:-1].split("\t")
+            # 第一列为label
+            tgt = int(line[columns["label"]])
+            seq_payload = line[columns["payload"]].split('|')
+            # 有包的字节序列长度和包个数两个截断
+            src = [args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(seq_payload[i])) for i in range(len(seq_payload))][: args.max_count] + [0] * (args.max_count - len(seq_payload))
+            src = [src[i][: args.seq_length] + [0] * (args.seq_length - len(src[i])) for i in range(len(src))]
+            seg = [[1] * len(src[i]) for i in range(len(src))]
+            seg = [seg[i][: args.seq_length] + [0] * (args.seq_length - len(seg[i])) for i in range(len(seg))]
+            # 将剩下的列，以|分割，并将形状变为（包数据×特征维度）
+            if args.attr:
+                attr = [line[i].split('|') for i in range(len(line)) if i != columns["label"] and i != columns["payload"]]
+                seq_attr = [[row[i] for row in attr] for i in range(len(attr[0]))][: args.max_count] + [[0] * len(attr)] * (args.max_count - len(attr[0]))
+                seq_attr = [seq_attr[i][: args.max_count] + [0] * (args.max_count - len(seq_attr[i])) for i in range(len(seq_attr))]
+                dataset.append((src, tgt, seg, seq_attr))
+            else:
+                dataset.append((src, tgt, seg))
+    if args.attr:
+        feas_type = {}
+        feas_type['num_feas'] = [columns[col] for col in columns.keys() if col in {'length', 'time', 'delta_time'}]
+        feas_type['cate_feas'] = [columns[col] for col in columns.keys() if col in {'syn', 'ack', 'fin', 'rst', 'psh', 'urg'}]
+        return dataset, feas_type
 
     return dataset
 
@@ -333,7 +371,11 @@ def main():
     model = model.to(args.device)
     print("Reading dataset.\n")
     # Training phase.
-    trainset = read_dataset(args, args.train_path)
+    # 是否使用除包payload之外的其他特征
+    if not args.attr:
+        trainset = read_dataset(args, args.train_path)
+    else:
+        trainset, feas_type = read_dataset_with_other_features(args, args.train_path)
     random.shuffle(trainset)
     instances_num = len(trainset)
     batch_size = args.batch_size
@@ -341,6 +383,16 @@ def main():
     src = torch.LongTensor([example[0] for example in trainset])
     tgt = torch.LongTensor([example[1] for example in trainset])
     seg = torch.LongTensor([example[2] for example in trainset])
+    if args.attr:
+        seq_attr = torch.FloatTensor([example[3] for example in trainset])
+        if 'num_feas' in feas_type:
+            min_value = torch.min(torch.min(seq_attr[:, feas_type['num_feas']], dim=0)[0], dim=0)[0]
+            max_value = torch.max(torch.max(seq_attr[:, feas_type['num_feas']], dim=0)[0], dim=0)[0]
+            seq_attr[:, feas_type['num_feas']] = (seq_attr[:, feas_type['num_feas']] - min_value) / (max_value - min_value)
+        if 'cate_feas' in feas_type:
+            pass
+    else:
+        seq_attr = None
     if args.soft_targets:
         soft_tgt = torch.FloatTensor([example[3] for example in trainset])
     else:
@@ -391,8 +443,8 @@ def main():
         # evaluate(args, model, trainset, 'train')
         # evaluate(args, model, read_dataset(args, args.dev_path), 'valid')
         train_res = evaluate(args, model, trainset, 'train')
-        result = evaluate(args, model, read_dataset(args, args.dev_path), 'valid')
-        test_res = evaluate(args, model, read_dataset(args, args.test_path), 'test')
+        result = evaluate(args, model, read_dataset_with_other_features(args, args.dev_path), 'valid')
+        test_res = evaluate(args, model, read_dataset_with_other_features(args, args.test_path), 'test')
         if args.lora_r:
             checkpoint_path = f"models/lora_checkpoint/lora_model_checkpoint{epoch}.bin"
             save_model(model, checkpoint_path, args.lora_r)
