@@ -1,4 +1,11 @@
 def model_opts(parser):
+
+    parser.add_argument("--tokenizer", choices=["bert", "char", "space"], default="bert",
+                        help="Specify the tokenizer."
+                             "Original Google BERT uses bert tokenizer on Chinese corpus."
+                             "Char tokenizer segments sentences into characters."
+                             "Space tokenizer segments sentences into words according to space."
+                             )
     parser.add_argument("--embedding", choices=["word", "word_pos", "word_pos_seg", "word_sinusoidalpos"], default="word_pos_seg",
                         help="Emebdding type.")
     parser.add_argument("--max_seq_length", type=int, default=512,
@@ -15,6 +22,10 @@ def model_opts(parser):
                                               "birnn", "bilstm", "bigru",
                                               "gatedcnn"],
                         default="transformer", help="Encoder type.")
+    parser.add_argument("--encoder1", choices=["transformer", "rnn", "lstm", "gru", "birnn", "bilstm", "bigru", "gatedcnn"], default="transformer",
+                        help="Encoder type for the first encoder.")
+    parser.add_argument("--encoder2", choices=["transformer", "rnn", "lstm", "gru", "birnn", "bilstm", "bigru", "gatedcnn"], default="transformer",
+                        help="Encoder type for the second encoder.")
     parser.add_argument("--mask", choices=["fully_visible", "causal", "causal_with_prefix"], default="fully_visible",
                         help="Mask type.")
     parser.add_argument("--layernorm_positioning", choices=["pre", "post"], default="post",
@@ -28,6 +39,10 @@ def model_opts(parser):
     parser.add_argument("--bidirectional", action="store_true", help="Specific to recurrent model.")
     parser.add_argument("--factorized_embedding_parameterization", action="store_true", help="Factorized embedding parameterization.")
     parser.add_argument("--parameter_sharing", action="store_true", help="Parameter sharing.")
+    parser.add_argument("--pooling1", choices=["mean", "max", "first", "last"], default="first",
+                        help="Pooling type for the first encoder.")
+    parser.add_argument("--pooling2", choices=["mean", "max", "first", "last"], default="first",
+                        help="Pooling type for the second encoder.")
 
 
 def optimization_opts(parser):
@@ -52,7 +67,13 @@ def training_opts(parser):
     parser.add_argument("--batch_size", type=int, default=32,                                                             
                         help="Batch size.")                                                                               
     parser.add_argument("--seq_length", type=int, default=128,                                                            
-                        help="Sequence length.")                                                                          
+                        help="Sequence length.")
+    parser.add_argument("--pkt_num", type=int, default=10,
+                        help="Maximum number of packets in a sequence.")
+    parser.add_argument("--attr", action='store_true', default=False,
+                        help="Use other features.")
+    parser.add_argument("--attr_dim", type=int, default=0,
+                        help="Number of dimensions of the other features.")                                                                              
     parser.add_argument("--dropout", type=float, default=0.5,                                                             
                         help="Dropout.")                                                                                  
     parser.add_argument("--epochs_num", type=int, default=3,                                                              
@@ -61,6 +82,10 @@ def training_opts(parser):
                         help="Specific steps to print prompt.")                                                           
     parser.add_argument("--seed", type=int, default=7,                                                                    
                         help="Random seed.")
+    parser.add_argument("--soft_targets", action='store_true',
+                        help="Train model with logits.")
+    parser.add_argument("--soft_alpha", type=float, default=0.5,
+                        help="Weight of the soft targets loss.")
 
 
 def finetune_opts(parser):
@@ -79,8 +104,10 @@ def finetune_opts(parser):
                         help="Path of the devset.")
     parser.add_argument("--test_path", default=None, type=str,
                         help="Path of the testset.")
-    parser.add_argument("--config_path", default="models/bert/base_config.json", type=str,
+    parser.add_argument("--config_path", default="models/bert_base_config.json", type=str,
                         help="Path of the config file.")
+    parser.add_argument("--lora_r", type=int, default=0,
+                        help="Rank of lora.")
 
     # Model options.
     model_opts(parser)
@@ -104,7 +131,7 @@ def infer_opts(parser):
                         help="Path of the testset.")
     parser.add_argument("--prediction_path", type=str, required=True,
                         help="Path of the prediction file.")
-    parser.add_argument("--config_path", default="models/bert/base_config.json", type=str,
+    parser.add_argument("--config_path", default="models/bert_base_config.json", type=str,
                         help="Path of the config file.")
 
     # Model options.
