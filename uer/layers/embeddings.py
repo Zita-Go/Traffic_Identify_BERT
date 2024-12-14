@@ -43,9 +43,9 @@ class WordPosEmbedding(nn.Module):
     def forward(self, src, _):
         word_emb = self.word_embedding(src)
         pos_emb = self.position_embedding(
-            torch.arange(0, word_emb.size(1), device=word_emb.device, dtype=torch.long)
-            .unsqueeze(0)
-            .repeat(word_emb.size(0), 1)
+            torch.arange(0, word_emb.size(-2), device=word_emb.device, dtype=torch.long)
+            # .unsqueeze(0)
+            # .repeat(word_emb.size(0), 1)
         )
 
         emb = word_emb + pos_emb
@@ -78,9 +78,9 @@ class WordPosSegEmbedding(nn.Module):
         word_emb = self.word_embedding(src)
         # 每一个序列的位置编码相同，需重复b次
         pos_emb = self.position_embedding(
-            torch.arange(0, word_emb.size(1), device=word_emb.device, dtype=torch.long)
-            .unsqueeze(0)
-            .repeat(word_emb.size(0), 1)
+            torch.arange(0, word_emb.size(-2), device=word_emb.device, dtype=torch.long)
+            # .unsqueeze(0)
+            # .repeat(word_emb.size(0), 1)
         )
         seg_emb = self.segment_embedding(seg)
 

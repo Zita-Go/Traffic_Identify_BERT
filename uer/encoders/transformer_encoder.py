@@ -50,38 +50,74 @@ class TransformerEncoder(nn.Module):
         if self.factorized_embedding_parameterization:
             emb = self.linear(emb)
 
-        batch_size, seq_length, _ = emb.size()
-        # Generate mask according to segment indicators.
-        # mask: [batch_size x 1 x seq_length x seq_length]
-        if self.mask == "fully_visible":
-            mask = (seg > 0). \
-                unsqueeze(1). \
-                repeat(1, seq_length, 1). \
-                unsqueeze(1)
-            mask = mask.float()
-            mask = (1.0 - mask) * -10000.0
-        elif self.mask == "causal":
-            mask = torch.ones(seq_length, seq_length, device=emb.device)
-            mask = torch.tril(mask)
-            mask = (1.0 - mask) * -10000
-            mask = mask.repeat(batch_size, 1, 1, 1)
+        if len(emb.size()) == 3:
+            batch_size, seq_length, _ = emb.size()
+            # Generate mask according to segment indicators.
+            # mask: [batch_size x 1 x seq_length x seq_length]
+            if self.mask == "fully_visible":
+                mask = (seg > 0). \
+                    unsqueeze(1). \
+                    repeat(1, seq_length, 1). \
+                    unsqueeze(1)
+                mask = mask.float()
+                mask = (1.0 - mask) * -10000.0
+            elif self.mask == "causal":
+                mask = torch.ones(seq_length, seq_length, device=emb.device)
+                mask = torch.tril(mask)
+                mask = (1.0 - mask) * -10000
+                mask = mask.repeat(batch_size, 1, 1, 1)
+            else:
+                mask_a = (seg == 1). \
+                    unsqueeze(1). \
+                    repeat(1, seq_length, 1). \
+                    unsqueeze(1).float()
+
+                mask_b = (seg > 0). \
+                    unsqueeze(1). \
+                    repeat(1, seq_length, 1). \
+                    unsqueeze(1).float()
+
+                mask_tril = torch.ones(seq_length, seq_length, device=emb.device)
+                mask_tril = torch.tril(mask_tril)
+                mask_tril = mask_tril.repeat(batch_size, 1, 1, 1)
+
+                mask = (mask_a + mask_b + mask_tril >= 2).float()
+                mask = (1.0 - mask) * -10000.0
+        elif len(emb.size()) == 4:
+            batch_size, pkt_num, seq_length, _ = emb.size()
+            # Generate mask according to segment indicators.
+            # mask: [batch_size x pkt_num x 1 x seq_length x seq_length]
+            if self.mask == "fully_visible":
+                mask = (seg > 0). \
+                    unsqueeze(2). \
+                    repeat(1, 1, seq_length, 1). \
+                    unsqueeze(2)
+                mask = mask.float()
+                mask = (1.0 - mask) * -10000.0
+            elif self.mask == "causal":
+                mask = torch.ones(pkt_num, seq_length, seq_length, device=emb.device)
+                mask = torch.tril(mask)
+                mask = (1.0 - mask) * -10000
+                mask = mask.repeat(batch_size, 1, 1, 1, 1)
+            else:
+                mask_a = (seg == 1). \
+                    unsqueeze(2). \
+                    repeat(1, 1, seq_length, 1). \
+                    unsqueeze(2).float()
+
+                mask_b = (seg > 0). \
+                    unsqueeze(2). \
+                    repeat(1, 1, seq_length, 1). \
+                    unsqueeze(2).float()
+
+                mask_tril = torch.ones(pkt_num, seq_length, seq_length, device=emb.device)
+                mask_tril = torch.tril(mask_tril)
+                mask_tril = mask_tril.repeat(batch_size, 1, 1, 1, 1)
+
+                mask = (mask_a + mask_b + mask_tril >= 2).float()
+                mask = (1.0 - mask) * -10000.0
         else:
-            mask_a = (seg == 1). \
-                unsqueeze(1). \
-                repeat(1, seq_length, 1). \
-                unsqueeze(1).float()
-
-            mask_b = (seg > 0). \
-                unsqueeze(1). \
-                repeat(1, seq_length, 1). \
-                unsqueeze(1).float()
-
-            mask_tril = torch.ones(seq_length, seq_length, device=emb.device)
-            mask_tril = torch.tril(mask_tril)
-            mask_tril = mask_tril.repeat(batch_size, 1, 1, 1)
-
-            mask = (mask_a + mask_b + mask_tril >= 2).float()
-            mask = (1.0 - mask) * -10000.0
+            raise ValueError("Unsupported input size: {}".format(emb.size()))
 
         hidden = emb
 

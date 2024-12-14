@@ -25,8 +25,8 @@ class RelativePositionEmbedding(nn.Module):
         Returns:
             position_bias: [1 x heads_num x seq_length x seq_length]
         """
-        query_length =  encoder_hidden.size()[1]
-        key_length = decoder_hidden.size()[1]
+        query_length =  encoder_hidden.size()[-2]
+        key_length = decoder_hidden.size()[-2]
 
         context_position = torch.arange(query_length, dtype=torch.long)[:, None]
         memory_position = torch.arange(key_length, dtype=torch.long)[None, :]

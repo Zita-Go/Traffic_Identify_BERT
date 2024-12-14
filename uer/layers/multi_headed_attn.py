@@ -35,28 +35,53 @@ class MultiHeadedAttention(nn.Module):
         Returns:
             output: [batch_size x seq_length x hidden_size]
         """
-        batch_size, seq_length, _ = query.size()
-        heads_num = self.heads_num
-        per_head_size = self.per_head_size
+        if len(key.size()) == 3:
+            batch_size, seq_length, _ = query.size()
+            heads_num = self.heads_num
+            per_head_size = self.per_head_size
 
-        def shape(x):
-            return x. \
-                   contiguous(). \
-                   view(batch_size, seq_length, heads_num, per_head_size). \
-                   transpose(1, 2)
+            def shape(x):
+                return x. \
+                    contiguous(). \
+                    view(batch_size, seq_length, heads_num, per_head_size). \
+                    transpose(1, 2)
 
-        def unshape(x):
-            return x. \
-                   transpose(1, 2). \
-                   contiguous(). \
-                   view(batch_size, seq_length, self.inner_hidden_size)
+            def unshape(x):
+                return x. \
+                    transpose(1, 2). \
+                    contiguous(). \
+                    view(batch_size, seq_length, self.inner_hidden_size)
 
 
-        query, key, value = [l(x). \
-                             view(batch_size, -1, heads_num, per_head_size). \
-                             transpose(1, 2) \
-                             for l, x in zip(self.linear_layers, (query, key, value))
-                            ]
+            query, key, value = [l(x). \
+                                view(batch_size, -1, heads_num, per_head_size). \
+                                transpose(1, 2) \
+                                for l, x in zip(self.linear_layers, (query, key, value))
+                                ]
+        elif len(key.size()) == 4:
+            batch_size, pkt_num, seq_length, _ = query.size()
+            heads_num = self.heads_num
+            per_head_size = self.per_head_size
+
+            def shape(x):
+                return x. \
+                    contiguous(). \
+                    view(batch_size, pkt_num, seq_length, heads_num, per_head_size). \
+                    transpose(2, 3)
+
+            def unshape(x):
+                return x. \
+                    transpose(2, 3). \
+                    contiguous(). \
+                    view(batch_size, pkt_num, seq_length, self.inner_hidden_size)
+
+            query, key, value = [l(x). \
+                                view(batch_size, pkt_num, -1, heads_num, per_head_size). \
+                                transpose(2, 3) \
+                                for l, x in zip(self.linear_layers, (query, key, value))
+                                ]
+        else:
+            raise ValueError("Unsupported input size: {}".format(key.size()))
 
         scores = torch.matmul(query, key.transpose(-2, -1))
         if position_bias is not None:
