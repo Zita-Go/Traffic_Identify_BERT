@@ -140,13 +140,13 @@ def get_burst_feature(label_pcap, payload_len):
 def get_feature_bursts_with_empty_payload(label_pcap, payload_len):
     pass
 
-def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
+def get_feature_bursts(label_pcap, payload_len, payload_pac):
     feature_data = []
     
     packets = scapy.rdpcap(label_pcap)
 
     # 提取bursts特征，包括包方向、包长度（payload长度）、包时间、6个标志位
-    feature_result = extract(label_pcap, filter='tcp', extension=['tcp.flags.syn', 'tcp.flags.ack', 'tcp.flags.fin', 'tcp.flags.reset', 'tcp.flags.push', 'tcp.flags.urg', 'tcp.payload'])
+    feature_result = extract(label_pcap, filter='tcp', extension=['tcp.flags.syn', 'tcp.flags.ack', 'tcp.flags.fin', 'tcp.flags.reset', 'tcp.flags.push', 'tcp.flags.urg', 'tcp.payload', 'ip.addr'])
     if len(feature_result.keys()) == 0 or 'TCP' not in label_pcap:
         return -1
     # 提取包信息
@@ -167,7 +167,15 @@ def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
         packet_push = [value.extension['tcp.flags.push'][idx][0] for idx in packet_index]
         packet_urg = [value.extension['tcp.flags.urg'][idx][0] for idx in packet_index]
         packet_data = [data[0] for data in packet_data]
-        packet_direction = [x // abs(x) for x in value.payload_lengths]
+        packet_ip = value.extension['ip.addr']
+        packet_direction = [1]
+        for i in range(1, len(packet_ip)):
+            if packet_ip[i][0] != packet_ip[i-1][0]:
+                packet_direction.append(packet_direction[-1] + 1)
+            else:
+                packet_direction.append(packet_direction[-1])
+        packet_direction = [packet_direction[idx] for idx in packet_index]
+        # packet_direction = [x // abs(x) for x in value.payload_lengths]
         packet_length = [abs(x) for x in packet_length]
         
 
@@ -287,10 +295,10 @@ def get_feature_bursts(label_pcap, payload_len, payload_pac, samples_num):
     feature_data.append(bursts_push)
     feature_data.append(bursts_urg)
 
-    # 随机抽取samples_num个bursts
-    if len(bursts_data) > samples_num:
-        bursts_index = random.sample(range(len(bursts_data)), samples_num)
-        feature_data = [[item[index] for index in bursts_index] for item in feature_data]
+    # # 随机抽取samples_num个bursts
+    # if len(bursts_data) > samples_num:
+    #     bursts_index = random.sample(range(len(bursts_data)), samples_num)
+    #     feature_data = [[item[index] for index in bursts_index] for item in feature_data]
 
     return feature_data
         
@@ -526,7 +534,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                     print(old_dataset[str(i)]['samples'])
             with open(dataset_save_path + "\\dataset.json", "w") as f:
                 json.dump(new_dataset, fp=f, ensure_ascii=False, indent=4)
-        X, Y = obtain_data(pcap_path, samples, features, dataset_save_path)
+        X, Y = obtain_data(pcap_path, max(samples), features, dataset_save_path)
         return X,Y
 
     dataset = {}
@@ -573,6 +581,9 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
     label_id = {}
     for index in range(len(label_name_list)):
         label_id[label_name_list[index]] = index
+    print("\nSava label_id to json file.")
+    with open(os.path.dirname(os.path.normpath(dataset_save_path)) + "\\label_id.json", "w") as f:
+        json.dump(label_id, fp=f, ensure_ascii=False, indent=4)
 
     r_file_record = []
     print("\nBegin to generate features.")
@@ -676,7 +687,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
             elif dataset_level == "packet":
                 feature_data = get_feature_packet(r_f, payload_len=payload_length)
             elif dataset_level == "burst":
-                feature_data = get_feature_bursts(r_f, payload_len=payload_length, payload_pac=payload_packet, samples_num=max(samples))
+                feature_data = get_feature_bursts(r_f, payload_len=payload_length, payload_pac=payload_packet)
 
             if feature_data == -1:
                 continue
@@ -746,59 +757,48 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
     with open(dataset_save_path + "\\dataset.json", "w") as f:
         json.dump(dataset,fp=f,ensure_ascii=False,indent=4)
 
-    X,Y = obtain_data(pcap_path, samples, features, dataset_save_path, json_data = dataset)
+    X,Y = obtain_data(pcap_path, max(samples), features, dataset_save_path, json_data = dataset)
     return X,Y
 
-def read_data_from_json(json_data, features, samples):
+def read_data_from_json(json_data, features, max_samples):
     X,Y = [], []
-    ablation_flag = 0
-    # 遍历所有特征
-    for feature_index in range(len(features)):
-        x = []
-        label_count = 0
-        for label in json_data.keys():
-            sample_num = json_data[label]["samples"]
-            if X == []:
-                if not ablation_flag:
-                    y = [label] * sample_num
-                    Y.append(y)
-                else:
-                    if sample_num > 1500:
-                        y = [label] * 1500
-                    else:
-                        y = [label] * sample_num
-                    Y.append(y)
-            # if samples[label_count] < sample_num:
-            #     x_label = []
-            #     for sample_index in random.sample(list(json_data[label][features[feature_index]].keys()),1500):
-            #         x_label.append(json_data[label][features[feature_index]][sample_index])
-            #     x.append(x_label)
-            # else:
-            # x_label = []
-            for sample_index in json_data[label][features[feature_index]].keys():
-                # x_label的每一个元素对应一个样本的一个特征
+    ablation_flag = 1
+
+    for label in json_data.keys():
+        sample_num = json_data[label]["samples"]
+        if not ablation_flag:
+            y = [label] * sample_num
+            Y.extend(y)
+            sample_indices = json_data[label][features[0]].keys()
+        else:
+            if sample_num > max_samples:
+                y = [label] * max_samples
+                sample_indices = random.sample(list(json_data[label][features[0]].keys()), max_samples)
+            else:
+                y = [label] * sample_num
+                sample_indices = json_data[label][features[0]].keys()
+            Y.extend(y)
+            
+        for sample_index in sample_indices:
+            x = []
+            for feature_index in range(len(features)):
                 feature_data = json_data[label][features[feature_index]][sample_index]
                 if isinstance(feature_data, list):
                     x.append('|'.join(map(str, feature_data)))
-                    # x.append(json_data[label][features[feature_index]][sample_index])
                 else:
                     x.append(json_data[label][features[feature_index]][sample_index])
-            # x的每一个元素对应一个特征
-            # x.append(x_label)
-            label_count += 1
-        # 3维，【特征，标签，样本】
-        X.append(x)
+            X.append(x)
     return X,Y
 
-def obtain_data(pcap_path, samples, features, dataset_save_path, json_data = None):
+def obtain_data(pcap_path, max_samples, features, dataset_save_path, json_data = None):
     
     if json_data:
-        X,Y = read_data_from_json(json_data,features,samples)
+        X,Y = read_data_from_json(json_data,features,max_samples)
     else:
         print("read dataset from json file.")
         with open(dataset_save_path + "\\dataset.json","r") as f:
             dataset = json.load(f)
-        X,Y = read_data_from_json(dataset,features,samples)
+        X,Y = read_data_from_json(dataset,features,max_samples)
 
     # for index in range(len(X)):
     #     if len(X[index]) != len(Y):

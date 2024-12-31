@@ -71,29 +71,31 @@ def dataset_extract(model):
     # 不再按照特征和标签分组，而是按照样本随机，X_payload为所有样本的payload，Y_all为所有样本的标签
     X_payload= []
     Y_all = []
-    for app_label in Y:
-        for label in app_label:
-            Y_all.append(int(label))
+    # for app_label in Y:
+    #     for label in app_label:
+    #         Y_all.append(int(label))
     # 统计每个类别的个数
     for label_id in range(_category):
-        for label in Y_all:
-            if label == label_id:
+        for label in Y:
+            if int(label) == label_id:
                 dataset_statistic[label_id] += 1
     print("category flow")
     for index in range(len(dataset_statistic)):
         print("%s\t%d" % (index, dataset_statistic[index]))
     print("all\t%d" % (sum(dataset_statistic)))
 
-    if len(features) == 1:
-        X_payload = X[0]
-        x_payload = np.array(X_payload)
-        dataset_label = np.array(Y_all)
-    elif len(features) > 1:
-        X_payload = X
-        x_payload = np.array(X_payload).T
-        dataset_label = np.array(Y_all)
-    else:
-        raise ValueError("No feature selected.")
+    x_payload = np.array(X)
+    dataset_label = np.array(Y)
+    # if len(features) == 1:
+    #     X_payload = X[0]
+    #     x_payload = np.array(X_payload)
+    #     dataset_label = np.array(Y_all)
+    # elif len(features) > 1:
+    #     X_payload = X
+    #     x_payload = np.array(X_payload).T
+    #     dataset_label = np.array(Y_all)
+    # else:
+    #     raise ValueError("No feature selected.")
 
     # for i in range(len(features)):
     #     if features[i] == "payload":
