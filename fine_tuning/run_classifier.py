@@ -2,7 +2,7 @@
 This script provides an exmaple to wrap UER-py for classification.
 """
 import sys
-# sys.path.append('D:/Users/ZitaGo/PycharmProjects/Transaction analysis/traffic identification/ET-BERT-main')
+sys.path.append('D:/Users/ZitaGo/PycharmProjects/Transaction_analysis/traffic_identification/ET-BERT-main')
 
 import random
 import argparse
@@ -26,39 +26,67 @@ from lora_init import *
 class Classifier(nn.Module):
     def __init__(self, args):
         super(Classifier, self).__init__()
-        self.embedding = str2embedding[args.embedding](args, len(args.tokenizer.vocab))
-        self.encoder1 = str2encoder[args.encoder1](args)
-        self.encoder2 = str2encoder[args.encoder2](args)
+        self.embedding = str2embedding[args.embedding](args, len(args.tokenizer.vocab), "encoder1")
+        self.encoder1 = str2encoder[args.encoder1](args, "encoder1")
+        self.encoder2 = str2encoder[args.encoder2](args, "encoder2")
+        self.attr_dim = args.attr_dim
+        if self.attr_dim > 0:
+            self.attr_embedding = nn.Linear(self.attr_dim + args.hidden_size["encoder1"], args.emb_size["encoder2"])
+        # self.encoder = str2encoder[args.encoder](args)
         self.labels_num = args.labels_num
-        self.pooling = args.pooling
+        self.pooling1 = args.pooling1
+        self.pooling2 = args.pooling2
         self.soft_targets = args.soft_targets
         self.soft_alpha = args.soft_alpha
-        self.output_layer_1 = nn.Linear(args.hidden_size, args.hidden_size)
-        self.output_layer_2 = nn.Linear(args.hidden_size, self.labels_num)
+        self.output_layer_1 = nn.Linear(args.hidden_size["encoder2"], args.hidden_size["encoder2"])
+        self.output_layer_2 = nn.Linear(args.hidden_size["encoder2"], self.labels_num)
 
-    def forward(self, src, tgt, seg, soft_tgt=None):
+    def forward(self, src, tgt, seg, seg_flow, seq_attr=None, soft_tgt=None):
         """
         Args:
-            src: [batch_size x seq_length]
+            src: [batch_size x pkt_num x seq_length]
             tgt: [batch_size]
-            seg: [batch_size x seq_length]
+            seg: [batch_size x pkt_num x seq_length]
+            seg_flow: [batch_size x pkt_num]
+            seq_attr: [batch_size x pkt_num x attr_dim]
+            soft_tgt: [batch_size x labels_num]
+
+            output: [batch_size x pkt_num x hidden_size]
         """
         # Embedding.
         emb = self.embedding(src, seg)
-        # Encoder.
-        output = self.encoder(emb, seg)
-        temp_output = output
-        # Target.
-        if self.pooling == "mean":
-            output = torch.mean(output, dim=1)
-        elif self.pooling == "max":
-            output = torch.max(output, dim=1)[0]
-        elif self.pooling == "last":
-            output = output[:, -1, :]
+        # Encoder1.
+        output1 = self.encoder1(emb, seg)
+        temp_output = output1
+        # Target1.
+        if self.pooling1 == "mean":
+            output1 = torch.mean(output1, dim=-2)
+        elif self.pooling1 == "max":
+            output1 = torch.max(output1, dim=-2)[0]
+        elif self.pooling1 == "last":
+            output1 = output1[:, :, -1, :]
         else:
-            output = output[:, 0, :]
-        output = torch.tanh(self.output_layer_1(output))
-        logits = self.output_layer_2(output)
+            output1 = output1[:, :, 0, :]
+
+        # 将payload输出与attr特征拼接起来
+        if seq_attr is not None:
+            output1 = torch.cat((output1, seq_attr), dim=-1)
+            output1 = self.attr_embedding(output1)
+
+        # Encoder2.
+        output2 = self.encoder2(output1, seg_flow)
+        # Target2.
+        if self.pooling2 == "mean":
+            output2 = torch.mean(output2, dim=-2)
+        elif self.pooling2 == "max":
+            output2 = torch.max(output2, dim=-2)[0]
+        elif self.pooling2 == "last":
+            output2 = output2[:, -1, :]
+        else:
+            output2 = output2[:, 0, :]
+        
+        output2 = torch.tanh(self.output_layer_1(output2))
+        logits = self.output_layer_2(output2)
         if tgt is not None:
             if self.soft_targets and soft_tgt is not None:
                 loss = self.soft_alpha * nn.MSELoss()(logits, soft_tgt) + \
@@ -117,26 +145,44 @@ def build_optimizer(args, model):
     return optimizer, scheduler
 
 
-def batch_loader(batch_size, src, tgt, seg, soft_tgt=None):
+def batch_loader(batch_size, src, tgt, seg, seg_flow, seq_attr=None, soft_tgt=None):
     instances_num = src.size()[0]
     for i in range(instances_num // batch_size):
-        src_batch = src[i * batch_size : (i + 1) * batch_size, :]
+        src_batch = src[i * batch_size : (i + 1) * batch_size, :, :]
         tgt_batch = tgt[i * batch_size : (i + 1) * batch_size]
-        seg_batch = seg[i * batch_size : (i + 1) * batch_size, :]
-        if soft_tgt is not None:
-            soft_tgt_batch = soft_tgt[i * batch_size : (i + 1) * batch_size, :]
-            yield src_batch, tgt_batch, seg_batch, soft_tgt_batch
+        seg_batch = seg[i * batch_size : (i + 1) * batch_size, :, :]
+        seg_flow_batch = seg_flow[i * batch_size : (i + 1) * batch_size, :]
+        if seq_attr is not None:
+            seq_attr_batch = seq_attr[i * batch_size : (i + 1) * batch_size, :, :]
+            if soft_tgt is not None:
+                soft_tgt_batch = soft_tgt[i * batch_size : (i + 1) * batch_size, :]
+                yield src_batch, tgt_batch, seg_batch, seg_flow_batch, seq_attr_batch, soft_tgt_batch
+            else:
+                yield src_batch, tgt_batch, seg_batch, seg_flow_batch, seq_attr_batch, None
         else:
-            yield src_batch, tgt_batch, seg_batch, None
+            if soft_tgt is not None:
+                soft_tgt_batch = soft_tgt[i * batch_size : (i + 1) * batch_size, :]
+                yield src_batch, tgt_batch, seg_batch, seg_flow_batch, None, soft_tgt_batch
+            else:
+                yield src_batch, tgt_batch, seg_batch, seg_flow_batch, None, None
     if instances_num > instances_num // batch_size * batch_size:
-        src_batch = src[instances_num // batch_size * batch_size :, :]
+        src_batch = src[instances_num // batch_size * batch_size :, :, :]
         tgt_batch = tgt[instances_num // batch_size * batch_size :]
-        seg_batch = seg[instances_num // batch_size * batch_size :, :]
-        if soft_tgt is not None:
-            soft_tgt_batch = soft_tgt[instances_num // batch_size * batch_size :, :]
-            yield src_batch, tgt_batch, seg_batch, soft_tgt_batch
+        seg_batch = seg[instances_num // batch_size * batch_size :, :, :]
+        seg_flow_batch = seg_flow[instances_num // batch_size * batch_size :, :]
+        if seq_attr is not None:
+            seq_attr_batch = seq_attr[instances_num // batch_size * batch_size :, :, :]
+            if soft_tgt is not None:
+                soft_tgt_batch = soft_tgt[instances_num // batch_size * batch_size :, :]
+                yield src_batch, tgt_batch, seg_batch, seg_flow_batch, seq_attr_batch, soft_tgt_batch
+            else:
+                yield src_batch, tgt_batch, seg_batch, seg_flow_batch, seq_attr_batch, None
         else:
-            yield src_batch, tgt_batch, seg_batch, None
+            if soft_tgt is not None:
+                soft_tgt_batch = soft_tgt[instances_num // batch_size * batch_size :, :]
+                yield src_batch, tgt_batch, seg_batch, seg_flow_batch, None, soft_tgt_batch
+            else:
+                yield src_batch, tgt_batch, seg_batch, seg_flow_batch, None, None
 
 
 def read_dataset(args, path):
@@ -193,38 +239,79 @@ def read_dataset_with_other_features(args, path):
             # 第一列为label
             tgt = int(line[columns["label"]])
             seq_payload = line[columns["payload"]].split('|')
+            if args.soft_targets and "logits" in columns.keys():
+                soft_tgt = [float(value) for value in line[columns["logits"]].split(" ")]
             # 有包的字节序列长度和包个数两个截断
-            src = [args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(seq_payload[i])) for i in range(len(seq_payload))][: args.max_count] + [0] * (args.max_count - len(seq_payload))
-            src = [src[i][: args.seq_length] + [0] * (args.seq_length - len(src[i])) for i in range(len(src))]
+            # 包维度的seg
+            seg_flow = [1] * len(seq_payload)
+            seg_flow = seg_flow[: args.pkt_num] + [0] * (args.pkt_num - len(seq_payload))
+            # 将payload转化为id序列
+            src = [args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(seq_payload[i])) for i in range(len(seq_payload))]
+            # 截断和padding包个数
+            src = src[: args.pkt_num] + [args.tokenizer.convert_tokens_to_ids([CLS_TOKEN])] * (args.pkt_num - len(src))
+            # 包内payload的seg
             seg = [[1] * len(src[i]) for i in range(len(src))]
+            # 截断和padding包内payload长度和seg
+            src = [src[i][: args.seq_length] + [0] * (args.seq_length - len(src[i])) for i in range(len(src))]
             seg = [seg[i][: args.seq_length] + [0] * (args.seq_length - len(seg[i])) for i in range(len(seg))]
             # 将剩下的列，以|分割，并将形状变为（包数据×特征维度）
             if args.attr:
                 attr = [line[i].split('|') for i in range(len(line)) if i != columns["label"] and i != columns["payload"]]
-                seq_attr = [[row[i] for row in attr] for i in range(len(attr[0]))][: args.max_count] + [[0] * len(attr)] * (args.max_count - len(attr[0]))
-                seq_attr = [seq_attr[i][: args.max_count] + [0] * (args.max_count - len(seq_attr[i])) for i in range(len(seq_attr))]
-                dataset.append((src, tgt, seg, seq_attr))
+                seq_attr = [[float(row[i]) for row in attr] for i in range(len(attr[0]))][: args.pkt_num] + [[0] * len(attr)] * (args.pkt_num - len(attr[0]))
+                if args.soft_targets and "logits" in columns.keys():
+                    dataset.append((src, tgt, seg, seg_flow, seq_attr, soft_tgt))
+                else:
+                    dataset.append((src, tgt, seg, seg_flow, seq_attr))
             else:
-                dataset.append((src, tgt, seg))
+                if args.soft_targets and "logits" in columns.keys():
+                    dataset.append((src, tgt, seg, seg_flow, None, soft_tgt))
+                else:
+                    dataset.append((src, tgt, seg, seg_flow, None))
     if args.attr:
         feas_type = {}
-        feas_type['num_feas'] = [columns[col] for col in columns.keys() if col in {'length', 'time', 'delta_time'}]
-        feas_type['cate_feas'] = [columns[col] for col in columns.keys() if col in {'syn', 'ack', 'fin', 'rst', 'psh', 'urg'}]
+        feas_type['num_feas'] = [columns[col]-2 for col in columns.keys() if col in {'length', 'time', 'delta_time'}]
+        feas_type['cate_feas'] = [columns[col]-2 for col in columns.keys() if col in {'syn', 'ack', 'fin', 'rst', 'psh', 'urg'}]
         return dataset, feas_type
 
     return dataset
 
 
-def train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_batch, soft_tgt_batch=None):
+def process_dataset(args, dataset, setname, feas_type=None, min_value=None, max_value=None):
+    src = torch.LongTensor([example[0] for example in dataset])
+    tgt = torch.LongTensor([example[1] for example in dataset])
+    seg = torch.LongTensor([example[2] for example in dataset])
+    seg_flow = torch.LongTensor([example[3] for example in dataset])
+    if args.attr:
+        seq_attr = torch.FloatTensor([example[4] for example in dataset])
+        if 'num_feas' in feas_type:
+            if min_value is None or max_value is None:
+                min_value = torch.min(torch.min(seq_attr[:, :, feas_type['num_feas']], dim=-2)[0], dim=-2)[0]
+                max_value = torch.max(torch.max(seq_attr[:, :, feas_type['num_feas']], dim=-2)[0], dim=-2)[0]
+            seq_attr[:, :, feas_type['num_feas']] = (seq_attr[:, :, feas_type['num_feas']] - min_value) / (max_value - min_value)
+        if 'cate_feas' in feas_type:
+            pass
+    else:
+        seq_attr = None
+    if args.soft_targets:
+        soft_tgt = torch.FloatTensor([example[5] for example in dataset])
+    else:
+        soft_tgt = None
+
+    return src, tgt, seg, seg_flow, seq_attr, soft_tgt, min_value, max_value
+
+
+def train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_batch, seg_flow_batch, seq_attr_batch=None, soft_tgt_batch=None):
     model.zero_grad()
 
     src_batch = src_batch.to(args.device)
     tgt_batch = tgt_batch.to(args.device)
     seg_batch = seg_batch.to(args.device)
+    seg_flow_batch = seg_flow_batch.to(args.device)
+    seq_attr_batch = seq_attr_batch.to(args.device)
     if soft_tgt_batch is not None:
         soft_tgt_batch = soft_tgt_batch.to(args.device)
 
-    loss, _ = model(src_batch, tgt_batch, seg_batch, soft_tgt_batch)
+    loss, _ = model(src_batch, tgt_batch, seg_batch, seg_flow_batch, seq_attr_batch, soft_tgt_batch)
     if torch.cuda.device_count() > 1:
         loss = torch.mean(loss)
 
@@ -240,11 +327,8 @@ def train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_bat
     return loss
 
 
-def evaluate(args, model, dataset, setname, print_confusion_matrix=False):
+def evaluate(args, model, src, tgt, seg, seg_flow, seq_attr, soft_tgt, setname, print_confusion_matrix=False):
     print(f"Evaluating {setname} dataset:")
-    src = torch.LongTensor([sample[0] for sample in dataset])
-    tgt = torch.LongTensor([sample[1] for sample in dataset])
-    seg = torch.LongTensor([sample[2] for sample in dataset])
 
     batch_size = args.batch_size
 
@@ -254,12 +338,17 @@ def evaluate(args, model, dataset, setname, print_confusion_matrix=False):
 
     model.eval()
 
-    for i, (src_batch, tgt_batch, seg_batch, _) in enumerate(batch_loader(batch_size, src, tgt, seg)):
+    for i, (src_batch, tgt_batch, seg_batch, seg_flow_batch, seq_attr_batch, soft_tgt_batch) in enumerate(batch_loader(batch_size, src, tgt, seg, seg_flow, seq_attr, soft_tgt)):
         src_batch = src_batch.to(args.device)
         tgt_batch = tgt_batch.to(args.device)
         seg_batch = seg_batch.to(args.device)
+        seg_flow_batch = seg_flow_batch.to(args.device)
+        seq_attr_batch = seq_attr_batch.to(args.device)
+        if soft_tgt_batch is not None:
+            soft_tgt_batch = soft_tgt_batch.to(args.device)
+
         with torch.no_grad():
-            _, logits = model(src_batch, tgt_batch, seg_batch)
+            _, logits = model(src_batch, tgt_batch, seg_batch, seg_flow_batch, seq_attr_batch, soft_tgt_batch)
         pred = torch.argmax(nn.Softmax(dim=1)(logits), dim=1)
         gold = tgt_batch
         for j in range(pred.size()[0]):
@@ -274,8 +363,13 @@ def evaluate(args, model, dataset, setname, print_confusion_matrix=False):
             for cf_a in cf_array:
                 f.write(str(cf_a)+'\n')
         print("Report precision, recall, and f1:")
-        with open('datasets/label_category.json') as js:
-            label_cat = json.load(js)
+        if not args.label_id_path:
+            print("No label_id_path provided, using default label categories.")
+            label_cat = {i: i for i in range(args.labels_num)}
+        else:
+            with open(args.label_id_path) as js:
+                label_id = json.load(js)
+                label_cat = dict(zip(label_id.values(), label_id.keys()))
         eps = 1e-9
         for i in range(confusion.size()[0]):
             p = confusion[i, i].item() / (confusion[i, :].sum().item() + eps)
@@ -284,10 +378,10 @@ def evaluate(args, model, dataset, setname, print_confusion_matrix=False):
                 f1 = 0
             else:
                 f1 = 2 * p * r / (p + r)
-            print("Label {}: {:.3f}, {:.3f}, {:.3f}".format(label_cat[str(i)], p, r, f1))
+            print("Label {}: {:.3f}, {:.3f}, {:.3f}".format(label_cat[i], p, r, f1))
 
-    print("Acc. (Correct/Total): {:.4f} ({}/{}) ".format(correct / len(dataset), correct, len(dataset)))
-    return correct / len(dataset), confusion
+    print("Acc. (Correct/Total): {:.4f} ({}/{}) ".format(correct / len(tgt), correct, len(tgt)))
+    return correct / len(tgt), confusion
 
 
 def main():
@@ -295,23 +389,6 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     finetune_opts(parser)
-
-    parser.add_argument("--pooling", choices=["mean", "max", "first", "last"], default="first",
-                        help="Pooling type.")
-
-    parser.add_argument("--tokenizer", choices=["bert", "char", "space"], default="bert",
-                        help="Specify the tokenizer."
-                             "Original Google BERT uses bert tokenizer on Chinese corpus."
-                             "Char tokenizer segments sentences into characters."
-                             "Space tokenizer segments sentences into words according to space."
-                             )
-
-    parser.add_argument("--soft_targets", action='store_true',
-                        help="Train model with logits.")
-    parser.add_argument("--soft_alpha", type=float, default=0.5,
-                        help="Weight of the soft targets loss.")
-    parser.add_argument("--lora_r", type=int, default=0,
-                        help="Rank of lora.")
     
     args = parser.parse_args()
 
@@ -319,7 +396,12 @@ def main():
     args = load_hyperparam(args)
 
     set_seed(args.seed)
-    print("Counting labels.\n")
+    # Print the arguments.
+    print("Arguments:\n")
+    for k, v in vars(args).items():
+        print(f"{k}: {v}")
+        
+    print("\nCounting labels.\n")
     # Count the number of labels.
     args.labels_num = count_labels_num(args.train_path)
     print("Building tokenizer.\n")
@@ -372,32 +454,23 @@ def main():
     print("Reading dataset.\n")
     # Training phase.
     # 是否使用除包payload之外的其他特征
-    if not args.attr:
-        trainset = read_dataset(args, args.train_path)
-    else:
-        trainset, feas_type = read_dataset_with_other_features(args, args.train_path)
+    # if not args.attr:
+    #     trainset = read_dataset(args, args.train_path)
+    # else:
+    trainset, feas_type = read_dataset_with_other_features(args, args.train_path)
     random.shuffle(trainset)
+
+    # 解析dataset，获取min_value和max_value
+    src, tgt, seg, seg_flow, seq_attr, soft_tgt, min_value, max_value = process_dataset(args, trainset, 'train', feas_type)
+
+    # 获取验证集和测试集数据
+    devset, _ = read_dataset_with_other_features(args, args.dev_path)
+    testset, _ = read_dataset_with_other_features(args, args.test_path)
+    dev_src, dev_tgt, dev_seg, dev_seg_flow, dev_seq_attr, dev_soft_tgt, _, _ = process_dataset(args, devset, 'valid', feas_type, min_value, max_value)
+    test_src, test_tgt, test_seg, test_seg_flow, test_seq_attr, test_soft_tgt, _, _ = process_dataset(args, testset, 'test', feas_type, min_value, max_value)
+
     instances_num = len(trainset)
     batch_size = args.batch_size
-
-    src = torch.LongTensor([example[0] for example in trainset])
-    tgt = torch.LongTensor([example[1] for example in trainset])
-    seg = torch.LongTensor([example[2] for example in trainset])
-    if args.attr:
-        seq_attr = torch.FloatTensor([example[3] for example in trainset])
-        if 'num_feas' in feas_type:
-            min_value = torch.min(torch.min(seq_attr[:, feas_type['num_feas']], dim=0)[0], dim=0)[0]
-            max_value = torch.max(torch.max(seq_attr[:, feas_type['num_feas']], dim=0)[0], dim=0)[0]
-            seq_attr[:, feas_type['num_feas']] = (seq_attr[:, feas_type['num_feas']] - min_value) / (max_value - min_value)
-        if 'cate_feas' in feas_type:
-            pass
-    else:
-        seq_attr = None
-    if args.soft_targets:
-        soft_tgt = torch.FloatTensor([example[3] for example in trainset])
-    else:
-        soft_tgt = None
-
     args.train_steps = int(instances_num * args.epochs_num / batch_size) + 1
 
     print("Batch size: ", batch_size)
@@ -424,8 +497,8 @@ def main():
 
     for epoch in tqdm.tqdm(range(1, args.epochs_num + 1)):
         model.train()
-        for i, (src_batch, tgt_batch, seg_batch, soft_tgt_batch) in enumerate(batch_loader(batch_size, src, tgt, seg, soft_tgt)):
-            loss = train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_batch, soft_tgt_batch)
+        for i, (src_batch, tgt_batch, seg_batch, seg_flow_batch, seq_attr_batch, soft_tgt_batch) in enumerate(batch_loader(batch_size, src, tgt, seg, seg_flow, seq_attr, soft_tgt)):
+            loss = train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_batch, seg_flow_batch, seq_attr_batch, soft_tgt_batch)
             total_loss += loss.item()
             if (i + 1) % args.report_steps == 0:
                 print("Epoch id: {}, Training steps: {}, Avg loss: {:.3f}".format(epoch, i + 1, total_loss / args.report_steps))
@@ -442,9 +515,9 @@ def main():
         #     model_eval = model_eval.to(args.device)
         # evaluate(args, model, trainset, 'train')
         # evaluate(args, model, read_dataset(args, args.dev_path), 'valid')
-        train_res = evaluate(args, model, trainset, 'train')
-        result = evaluate(args, model, read_dataset_with_other_features(args, args.dev_path), 'valid')
-        test_res = evaluate(args, model, read_dataset_with_other_features(args, args.test_path), 'test')
+        train_res = evaluate(args, model, src, tgt, seg, seg_flow, seq_attr, soft_tgt, 'train')
+        result = evaluate(args, model, dev_src, dev_tgt, dev_seg, dev_seg_flow, dev_seq_attr, dev_soft_tgt, 'valid')
+        test_res = evaluate(args, model, test_src, test_tgt, test_seg, test_seg_flow, test_seq_attr, test_soft_tgt, 'test', True)
         if args.lora_r:
             checkpoint_path = f"models/lora_checkpoint/lora_model_checkpoint{epoch}.bin"
             save_model(model, checkpoint_path, args.lora_r)
@@ -470,7 +543,7 @@ def main():
             model_eval.module.load_state_dict(torch.load(args.output_model_path))
         else:
             model_eval.load_state_dict(torch.load(args.output_model_path))
-        evaluate(args, model_eval, read_dataset(args, args.test_path), 'test', True)
+        evaluate(args, model_eval, test_src, test_tgt, test_seg, test_seg_flow, test_seq_attr, test_soft_tgt, 'test', True)
     print('Already finished!')
 
 
