@@ -41,7 +41,7 @@ def model_opts(parser):
     parser.add_argument("--parameter_sharing", action="store_true", help="Parameter sharing.")
     parser.add_argument("--pooling1", choices=["mean", "max", "first", "last"], default="first",
                         help="Pooling type for the first encoder.")
-    parser.add_argument("--pooling2", choices=["mean", "max", "first", "last"], default="first",
+    parser.add_argument("--pooling2", choices=["mean", "max", "first", "last"], default="mean",
                         help="Pooling type for the second encoder.")
 
 
@@ -104,8 +104,12 @@ def finetune_opts(parser):
                         help="Path of the devset.")
     parser.add_argument("--test_path", default=None, type=str,
                         help="Path of the testset.")
-    parser.add_argument("--config_path", default="models/bert_base_config.json", type=str,
-                        help="Path of the config file.")
+    parser.add_argument("--label_id_path", default=None, type=str,
+                        help="Path of the label id file.")
+    parser.add_argument("--config_path1", default="models/bert_config/base_config.json", type=str,
+                        help="Path of the config file for the first encoder.")
+    parser.add_argument("--config_path2", default="models/bert_config/mini_config.json", type=str,
+                        help="Path of the config file for the second encoder.")
     parser.add_argument("--lora_r", type=int, default=0,
                         help="Rank of lora.")
 
