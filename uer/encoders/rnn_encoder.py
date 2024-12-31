@@ -4,25 +4,25 @@ from uer.utils.misc import *
 
 
 class RnnEncoder(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, encoder_conf):
         super(RnnEncoder, self).__init__()
 
         self.bidirectional = args.bidirectional
         if self.bidirectional:
-            assert args.hidden_size % 2 == 0
-            self.hidden_size = args.hidden_size // 2
+            assert args.hidden_size[encoder_conf] % 2 == 0
+            self.hidden_size = args.hidden_size[encoder_conf] // 2
         else:
-            self.hidden_size = args.hidden_size
-        self.layers_num = args.layers_num
+            self.hidden_size = args.hidden_size[encoder_conf]
+        self.layers_num = args.layers_num[encoder_conf]
 
-        self.rnn = nn.RNN(input_size=args.emb_size,
+        self.rnn = nn.RNN(input_size=args.emb_size[encoder_conf],
                           hidden_size=self.hidden_size,
-                          num_layers=args.layers_num,
-                          dropout=args.dropout,
+                          num_layers=args.layers_num[encoder_conf],
+                          dropout=args.dropout[encoder_conf],
                           batch_first=True,
                           bidirectional=self.bidirectional)
 
-        self.drop = nn.Dropout(args.dropout)
+        self.drop = nn.Dropout(args.dropout[encoder_conf])
 
     def forward(self, emb, _):
         hidden = self.init_hidden(emb.size(0), emb.device)
@@ -38,13 +38,13 @@ class RnnEncoder(nn.Module):
 
 
 class LstmEncoder(RnnEncoder):
-    def __init__(self, args):
+    def __init__(self, args, encoder_conf):
         super(LstmEncoder, self).__init__(args)
 
-        self.rnn = nn.LSTM(input_size=args.emb_size,
+        self.rnn = nn.LSTM(input_size=args.emb_size[encoder_conf],
                            hidden_size=self.hidden_size,
-                           num_layers=args.layers_num,
-                           dropout=args.dropout,
+                           num_layers=args.layers_num[encoder_conf],
+                           dropout=args.dropout[encoder_conf],
                            batch_first=True,
                            bidirectional=self.bidirectional)
 
@@ -58,38 +58,38 @@ class LstmEncoder(RnnEncoder):
 
 
 class GruEncoder(RnnEncoder):
-    def __init__(self, args):
+    def __init__(self, args, encoder_conf):
         super(GruEncoder, self).__init__(args)
 
-        self.rnn = nn.GRU(input_size=args.emb_size,
+        self.rnn = nn.GRU(input_size=args.emb_size[encoder_conf],
                           hidden_size=self.hidden_size,
-                          num_layers=args.layers_num,
-                          dropout=args.dropout,
+                          num_layers=args.layers_num[encoder_conf],
+                          dropout=args.dropout[encoder_conf],
                           batch_first=True,
                           bidirectional=self.bidirectional)
 
 
 class BirnnEncoder(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, encoder_conf):
         super(BirnnEncoder, self).__init__()
 
-        assert args.hidden_size % 2 == 0
-        self.hidden_size = args.hidden_size // 2
-        self.layers_num = args.layers_num
+        assert args.hidden_size[encoder_conf] % 2 == 0
+        self.hidden_size = args.hidden_size[encoder_conf] // 2
+        self.layers_num = args.layers_num[encoder_conf]
 
-        self.rnn_forward = nn.RNN(input_size=args.emb_size,
+        self.rnn_forward = nn.RNN(input_size=args.emb_size[encoder_conf],
                            hidden_size=self.hidden_size,
-                           num_layers=args.layers_num,
-                           dropout=args.dropout,
+                           num_layers=args.layers_num[encoder_conf],
+                           dropout=args.dropout[encoder_conf],
                            batch_first=True)
 
-        self.rnn_backward = nn.RNN(input_size=args.emb_size,
+        self.rnn_backward = nn.RNN(input_size=args.emb_size[encoder_conf],
                            hidden_size=self.hidden_size,
-                           num_layers=args.layers_num,
-                           dropout=args.dropout,
+                           num_layers=args.layers_num[encoder_conf],
+                           dropout=args.dropout[encoder_conf],
                            batch_first=True)
 
-        self.drop = nn.Dropout(args.dropout)
+        self.drop = nn.Dropout(args.dropout[encoder_conf])
     
     def forward(self, emb, _):
         # Forward.
@@ -112,19 +112,19 @@ class BirnnEncoder(nn.Module):
 
 
 class BilstmEncoder(BirnnEncoder):
-    def __init__(self, args):
+    def __init__(self, args, encoder_conf):
         super(BilstmEncoder, self).__init__(args)
 
-        self.rnn_forward = nn.LSTM(input_size=args.emb_size,
+        self.rnn_forward = nn.LSTM(input_size=args.emb_size[encoder_conf],
                            hidden_size=self.hidden_size,
-                           num_layers=args.layers_num,
-                           dropout=args.dropout,
+                           num_layers=args.layers_num[encoder_conf],
+                           dropout=args.dropout[encoder_conf],
                            batch_first=True)
 
-        self.rnn_backward = nn.LSTM(input_size=args.emb_size,
+        self.rnn_backward = nn.LSTM(input_size=args.emb_size[encoder_conf],
                            hidden_size=self.hidden_size,
-                           num_layers=args.layers_num,
-                           dropout=args.dropout,
+                           num_layers=args.layers_num[encoder_conf],
+                           dropout=args.dropout[encoder_conf],
                            batch_first=True)
 
     def init_hidden(self, batch_size, device):
@@ -133,17 +133,17 @@ class BilstmEncoder(BirnnEncoder):
 
 
 class BigruEncoder(BirnnEncoder):
-    def __init__(self, args):
+    def __init__(self, args, encoder_conf):
         super(BigruEncoder, self).__init__(args)
 
-        self.rnn_forward = nn.GRU(input_size=args.emb_size,
+        self.rnn_forward = nn.GRU(input_size=args.emb_size[encoder_conf],
                            hidden_size=self.hidden_size,
-                           num_layers=args.layers_num,
-                           dropout=args.dropout,
+                           num_layers=args.layers_num[encoder_conf],
+                           dropout=args.dropout[encoder_conf],
                            batch_first=True)
 
-        self.rnn_backward = nn.GRU(input_size=args.emb_size,
+        self.rnn_backward = nn.GRU(input_size=args.emb_size[encoder_conf],
                            hidden_size=self.hidden_size,
-                           num_layers=args.layers_num,
-                           dropout=args.dropout,
+                           num_layers=args.layers_num[encoder_conf],
+                           dropout=args.dropout[encoder_conf],
                            batch_first=True)

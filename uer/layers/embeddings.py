@@ -8,13 +8,13 @@ class WordEmbedding(nn.Module):
     """
     """
 
-    def __init__(self, args, vocab_size):
+    def __init__(self, args, vocab_size, encoder_conf):
         super(WordEmbedding, self).__init__()
         self.remove_embedding_layernorm = args.remove_embedding_layernorm
-        self.dropout = nn.Dropout(args.dropout)
-        self.word_embedding = nn.Embedding(vocab_size, args.emb_size)
+        self.dropout = nn.Dropout(args.dropout[encoder_conf])
+        self.word_embedding = nn.Embedding(vocab_size, args.emb_size[encoder_conf])
         if not self.remove_embedding_layernorm:
-            self.layer_norm = LayerNorm(args.emb_size)
+            self.layer_norm = LayerNorm(args.emb_size[encoder_conf])
 
     def forward(self, src, _):
         emb = self.word_embedding(src)
@@ -30,15 +30,15 @@ class WordPosEmbedding(nn.Module):
     word embedding and position embedding.
     """
 
-    def __init__(self, args, vocab_size):
+    def __init__(self, args, vocab_size, encoder_conf):
         super(WordPosEmbedding, self).__init__()
         self.remove_embedding_layernorm = args.remove_embedding_layernorm
-        self.dropout = nn.Dropout(args.dropout)
-        self.max_seq_length = args.max_seq_length
-        self.word_embedding = nn.Embedding(vocab_size, args.emb_size)
-        self.position_embedding = nn.Embedding(self.max_seq_length, args.emb_size)
+        self.dropout = nn.Dropout(args.dropout[encoder_conf])
+        self.max_seq_length = args.max_seq_length[encoder_conf]
+        self.word_embedding = nn.Embedding(vocab_size, args.emb_size[encoder_conf])
+        self.position_embedding = nn.Embedding(self.max_seq_length, args.emb_size[encoder_conf])
         if not self.remove_embedding_layernorm:
-            self.layer_norm = LayerNorm(args.emb_size)
+            self.layer_norm = LayerNorm(args.emb_size[encoder_conf])
 
     def forward(self, src, _):
         word_emb = self.word_embedding(src)
@@ -60,19 +60,19 @@ class WordPosSegEmbedding(nn.Module):
     BERT embedding consists of three parts:
     word embedding, position embedding, and segment embedding.
     """
-    def __init__(self, args, vocab_size):
+    def __init__(self, args, vocab_size, encoder_conf):
         super(WordPosSegEmbedding, self).__init__()
         self.remove_embedding_layernorm = args.remove_embedding_layernorm
-        self.dropout = nn.Dropout(args.dropout)
-        self.max_seq_length = args.max_seq_length
+        self.dropout = nn.Dropout(args.dropout[encoder_conf])
+        self.max_seq_length = args.max_seq_length[encoder_conf]
         # 可学习的词向量，即4字节的token对应的词表
-        self.word_embedding = nn.Embedding(vocab_size, args.emb_size)
+        self.word_embedding = nn.Embedding(vocab_size, args.emb_size[encoder_conf])
         # 可学习的位置编码
-        self.position_embedding = nn.Embedding(self.max_seq_length, args.emb_size)
+        self.position_embedding = nn.Embedding(self.max_seq_length, args.emb_size[encoder_conf])
         # 段嵌入
-        self.segment_embedding = nn.Embedding(3, args.emb_size)
+        self.segment_embedding = nn.Embedding(3, args.emb_size[encoder_conf])
         if not self.remove_embedding_layernorm:
-            self.layer_norm = LayerNorm(args.emb_size)
+            self.layer_norm = LayerNorm(args.emb_size[encoder_conf])
 
     def forward(self, src, seg):
         word_emb = self.word_embedding(src)
@@ -100,18 +100,18 @@ class WordSinusoidalposEmbedding(nn.Module):
        dim (int): embedding size
     """
 
-    def __init__(self, args, vocab_size):
+    def __init__(self, args, vocab_size, encoder_conf):
         super(WordSinusoidalposEmbedding, self).__init__()
-        if args.emb_size % 2 != 0:
+        if args.emb_size[encoder_conf] % 2 != 0:
             raise ValueError("Cannot use sin/cos positional encoding with "
-                             "odd dim (got dim={:d})".format(args.emb_size))
-        self.max_seq_length = args.max_seq_length
-        pe = torch.zeros(self.max_seq_length, args.emb_size)
+                             "odd dim (got dim={:d})".format(args.emb_size[encoder_conf]))
+        self.max_seq_length = args.max_seq_length[encoder_conf]
+        pe = torch.zeros(self.max_seq_length, args.emb_size[encoder_conf])
         position = torch.arange(0, self.max_seq_length).unsqueeze(1)
         div_term = torch.exp(
             (
-                torch.arange(0, args.emb_size, 2, dtype=torch.float)
-                *- (math.log(10000.0) / args.emb_size)
+                torch.arange(0, args.emb_size[encoder_conf], 2, dtype=torch.float)
+                *- (math.log(10000.0) / args.emb_size[encoder_conf])
             )
         )
         pe[:, 0::2] = torch.sin(position.float() * div_term)
@@ -119,9 +119,9 @@ class WordSinusoidalposEmbedding(nn.Module):
         pe = pe.unsqueeze(1)
         self.register_buffer("pe", pe)
 
-        self.word_embedding = nn.Embedding(vocab_size, args.emb_size)
+        self.word_embedding = nn.Embedding(vocab_size, args.emb_size[encoder_conf])
 
-        self.dropout = nn.Dropout(args.dropout)
+        self.dropout = nn.Dropout(args.dropout[encoder_conf])
 
     def forward(self, src, _):
         """Embed inputs.

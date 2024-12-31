@@ -10,7 +10,7 @@ class TransformerLayer(nn.Module):
     Transformer layer mainly consists of two parts:
     multi-headed self-attention and feed forward layer.
     """
-    def __init__(self, args):
+    def __init__(self, args, encoder_conf):
         super(TransformerLayer, self).__init__()
 
         self.layernorm_positioning = args.layernorm_positioning
@@ -18,34 +18,34 @@ class TransformerLayer(nn.Module):
         if hasattr(args, "attention_head_size"):
             attention_head_size = args.attention_head_size
         else:
-            attention_head_size = args.hidden_size // args.heads_num
+            attention_head_size = args.hidden_size[encoder_conf] // args.heads_num[encoder_conf]
 
         has_bias = bool(1 - args.remove_transformer_bias)
         with_scale = bool(1 - args.remove_attention_scale)
 
         # Multi-headed self-attention.
         self.self_attn = MultiHeadedAttention(
-            args.hidden_size, args.heads_num, attention_head_size, args.dropout, has_bias=has_bias, with_scale = with_scale
+            args.hidden_size[encoder_conf], args.heads_num[encoder_conf], attention_head_size, args.dropout[encoder_conf], has_bias=has_bias, with_scale = with_scale
         )
-        self.dropout_1 = nn.Dropout(args.dropout)
+        self.dropout_1 = nn.Dropout(args.dropout[encoder_conf])
 
         # Feed forward layer.
         if args.feed_forward == "gated":
             self.feed_forward = GatedFeedForward(
-                args.hidden_size, args.feedforward_size, args.hidden_act, has_bias
+                args.hidden_size[encoder_conf], args.feedforward_size[encoder_conf], args.hidden_act[encoder_conf], has_bias
             )
         else:
             self.feed_forward = PositionwiseFeedForward(
-                args.hidden_size, args.feedforward_size, args.hidden_act, has_bias
+                args.hidden_size[encoder_conf], args.feedforward_size[encoder_conf], args.hidden_act[encoder_conf], has_bias
             )
-        self.dropout_2 = nn.Dropout(args.dropout)
+        self.dropout_2 = nn.Dropout(args.dropout[encoder_conf])
 
         if args.layernorm == "t5":
-            self.layer_norm_1 = T5LayerNorm(args.hidden_size)
-            self.layer_norm_2 = T5LayerNorm(args.hidden_size)
+            self.layer_norm_1 = T5LayerNorm(args.hidden_size[encoder_conf])
+            self.layer_norm_2 = T5LayerNorm(args.hidden_size[encoder_conf])
         else:
-            self.layer_norm_1 = LayerNorm(args.hidden_size)
-            self.layer_norm_2 = LayerNorm(args.hidden_size)
+            self.layer_norm_1 = LayerNorm(args.hidden_size[encoder_conf])
+            self.layer_norm_2 = LayerNorm(args.hidden_size[encoder_conf])
 
 
 
@@ -74,7 +74,7 @@ class TransformerLayer(nn.Module):
 
 
 class TransformerDecoderLayer(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, encoder_conf):
         super(TransformerDecoderLayer, self).__init__()
 
         self.layernorm_positioning = args.layernorm_positioning
@@ -82,43 +82,43 @@ class TransformerDecoderLayer(nn.Module):
         if hasattr(args, "attention_head_size"):
             attention_head_size = args.attention_head_size
         else:
-            attention_head_size = args.hidden_size // args.heads_num
+            attention_head_size = args.hidden_size[encoder_conf] // args.heads_num[encoder_conf]
 
         has_bias = bool(1 - args.remove_transformer_bias)
         with_scale = bool(1 - args.remove_attention_scale)
 
         # Multi-headed self-attention.
         self.self_attn = MultiHeadedAttention(
-            args.hidden_size, args.heads_num, attention_head_size, args.dropout, has_bias=has_bias, with_scale = with_scale
+            args.hidden_size[encoder_conf], args.heads_num[encoder_conf], attention_head_size, args.dropout[encoder_conf], has_bias=has_bias, with_scale = with_scale
         )
-        self.dropout_1 = nn.Dropout(args.dropout)
+        self.dropout_1 = nn.Dropout(args.dropout[encoder_conf])
 
         # Multi-headed context-attention.
         self.context_attn = MultiHeadedAttention(
-            args.hidden_size, args.heads_num, attention_head_size, args.dropout, has_bias=has_bias, with_scale = with_scale
+            args.hidden_size[encoder_conf], args.heads_num[encoder_conf], attention_head_size, args.dropout[encoder_conf], has_bias=has_bias, with_scale = with_scale
         )
-        self.dropout_2 = nn.Dropout(args.dropout)
+        self.dropout_2 = nn.Dropout(args.dropout[encoder_conf])
 
         # Feed forward layer.
         if args.feed_forward == "gated":
             self.feed_forward = GatedFeedForward(
-                args.hidden_size, args.feedforward_size, args.hidden_act, has_bias
+                args.hidden_size[encoder_conf], args.feedforward_size[encoder_conf], args.hidden_act[encoder_conf], has_bias
             )
         else:
             self.feed_forward = PositionwiseFeedForward(
-                args.hidden_size, args.feedforward_size, args.hidden_act, has_bias
+                args.hidden_size[encoder_conf], args.feedforward_size[encoder_conf], args.hidden_act[encoder_conf], has_bias
             )
-        self.dropout_3 = nn.Dropout(args.dropout)
+        self.dropout_3 = nn.Dropout(args.dropout[encoder_conf])
 
         # Layer Normalization
         if  args.layernorm == "t5":
-            self.layer_norm_1 = T5LayerNorm(args.hidden_size)
-            self.layer_norm_2 = T5LayerNorm(args.hidden_size)
-            self.layer_norm_3 = T5LayerNorm(args.hidden_size)
+            self.layer_norm_1 = T5LayerNorm(args.hidden_size[encoder_conf])
+            self.layer_norm_2 = T5LayerNorm(args.hidden_size[encoder_conf])
+            self.layer_norm_3 = T5LayerNorm(args.hidden_size[encoder_conf])
         else:
-            self.layer_norm_1 = LayerNorm(args.hidden_size)
-            self.layer_norm_2 = LayerNorm(args.hidden_size)
-            self.layer_norm_3 = LayerNorm(args.hidden_size)
+            self.layer_norm_1 = LayerNorm(args.hidden_size[encoder_conf])
+            self.layer_norm_2 = LayerNorm(args.hidden_size[encoder_conf])
+            self.layer_norm_3 = LayerNorm(args.hidden_size[encoder_conf])
 
 
 

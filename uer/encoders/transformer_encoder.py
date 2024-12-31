@@ -8,10 +8,10 @@ class TransformerEncoder(nn.Module):
     """
     BERT encoder exploits 12 or 24 transformer layers to extract features.
     """
-    def __init__(self, args):
+    def __init__(self, args, encoder_conf):
         super(TransformerEncoder, self).__init__()
         self.mask = args.mask
-        self.layers_num = args.layers_num
+        self.layers_num = args.layers_num[encoder_conf]
         self.parameter_sharing = args.parameter_sharing
         self.factorized_embedding_parameterization = args.factorized_embedding_parameterization
         self.layernorm_positioning = args.layernorm_positioning
@@ -20,22 +20,22 @@ class TransformerEncoder(nn.Module):
         has_bias = bool(1 - args.remove_transformer_bias)
 
         if self.factorized_embedding_parameterization:
-            self.linear = nn.Linear(args.emb_size, args.hidden_size)
+            self.linear = nn.Linear(args.emb_size[encoder_conf], args.hidden_size[encoder_conf])
 
         if self.parameter_sharing:
-            self.transformer = TransformerLayer(args)
+            self.transformer = TransformerLayer(args, encoder_conf)
         else:
             self.transformer = nn.ModuleList(
-                [TransformerLayer(args) for _ in range(self.layers_num)]
+                [TransformerLayer(args, encoder_conf) for _ in range(self.layers_num)]
             )
         if self.layernorm_positioning == "pre":
             if args.layernorm == "t5":
-                self.layer_norm = T5LayerNorm(args.hidden_size)
+                self.layer_norm = T5LayerNorm(args.hidden_size[encoder_conf])
             else:
-                self.layer_norm = LayerNorm(args.hidden_size)
+                self.layer_norm = LayerNorm(args.hidden_size[encoder_conf])
 
         if self.relative_position_embedding:
-            self.relative_pos_emb = RelativePositionEmbedding(bidirectional=True, heads_num=args.heads_num,
+            self.relative_pos_emb = RelativePositionEmbedding(bidirectional=True, heads_num=args.heads_num[encoder_conf],
                                                               num_buckets=args.relative_attention_buckets_num)
 
 
