@@ -7,3 +7,4 @@ models/models/*
 !models/models/.gitkeep
 models/lora_checkpoint/*
 !models/lora_checkpoint/.gitkeep
+fine_tuning/logs/*
