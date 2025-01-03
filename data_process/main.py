@@ -5,7 +5,6 @@ import numpy as np
 import json
 import os
 import time
-import xlrd
 import pickle
 from sklearn.model_selection import StratifiedShuffleSplit
 import pandas as pd
@@ -21,11 +20,15 @@ import dataset_generation
 import data_preprocess
 import open_dataset_deal
 
-_category = 120 # dataset class
-dataset_dir = "I:\\datasets\\" # the path to save dataset for dine-tuning
+_category = 7 # dataset class
+dataset_dir = "datasets\\blockchain_traffic\\bert_data\\" # the path to save dataset for dine-tuning
 
-# 分别表示，原始数据地址、处理后数据存放地址、
-pcap_path, dataset_save_path, samples, features, dataset_level = "I:\\cstnet-tls1.3\\packet\\splitcap\\", "I:\\cstnet-tls1.3\\packet\\result\\", [5000], ["payload"], "packet"
+# 分别表示，原始数据地址、处理后数据存放地址、样本数、特征、分割方式
+pcap_path = "datasets\\blockchain_traffic\\bert_data\\splitcap\\"
+dataset_save_path = "datasets\\blockchain_traffic\\bert_data\\processed_data\\"
+samples = [5000]
+features = ["payload"]
+dataset_level = "burst"
 
 def dataset_extract(model):
     
@@ -51,7 +54,7 @@ def dataset_extract(model):
         print(e)
         print("Dataset directory %s not exist.\nBegin to obtain new dataset."%(dataset_save_path + "dataset\\"))
 
-    X,Y = dataset_generation.generation(pcap_path, samples, features, splitcap=False, dataset_save_path=dataset_save_path,dataset_level=dataset_level)
+    X,Y = dataset_generation.generation(pcap_path, samples, features, splitcap=False, dataset_save_path=dataset_save_path, dataset_level=dataset_level)
 
     dataset_statistic = [0] * _category
 
@@ -228,7 +231,7 @@ if __name__ == '__main__':
     if file2dir:
         open_dataset_deal.dataset_file2dir(pcap_path)
 
-    splitcap_finish = 0
+    splitcap_finish = 1
     # samples是一个列表，表示所有类别流量的样本数
     if splitcap_finish:
         samples = count_label_number(samples)

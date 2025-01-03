@@ -4,7 +4,6 @@
 import os
 import sys
 import copy
-import xlrd
 import json
 import tqdm
 import shutil
@@ -46,10 +45,10 @@ def split_cap(pcap_path, pcap_file, pcap_name, pcap_label='', dataset_level = 'f
         if not os.path.exists(pcap_path + "\\splitcap\\" + pcap_name):
             os.mkdir(pcap_path + "\\splitcap\\" + pcap_name)
         output_path = pcap_path + "\\splitcap\\" + pcap_name
-    if dataset_level == 'flow':
-        cmd = "I:\\SplitCap.exe -r %s -s session -o " + output_path
+    if dataset_level == 'flow' or dataset_level == 'burst':
+        cmd = "D:\\Users\\ZitaGo\\Downloads\\SplitCap.exe -r %s -s session -o " + output_path
     elif dataset_level == 'packet':
-        cmd = "I:\\SplitCap.exe -r %s -s packets 1 -o " + output_path
+        cmd = "D:\\Users\\ZitaGo\\Downloads\\SplitCap.exe -r %s -s packets 1 -o " + output_path
     command = cmd%pcap_file
     os.system(command)
     return output_path
@@ -133,6 +132,75 @@ def get_burst_feature(label_pcap, payload_len):
         with open(word_dir + word_name,'a') as f:
             f.write(burst_txt)
     return 0
+
+def get_feature_burst(label_pcap, payload_len, payload_pac):
+    feature_data = []
+    burst_strings = []
+    packets = scapy.rdpcap(label_pcap)
+    packet_direction = [1]
+    feature_result = extract(label_pcap, filter='tcp', extension=['tcp.payload', 'ip.addr', 'ipv6.addr'])
+    if len(feature_result.keys()) == 0 or 'TCP' not in label_pcap:
+        return -1
+    for key in feature_result.keys():
+        value = feature_result[key]
+        # 所有包的payload长度都为0，说明没有有效信息
+        if len(value.payload_lengths) == 0 or 'tcp' not in key:
+            return -1
+        
+        packet_data = value.extension['tcp.payload']
+        # payload长度不为0的包索引
+        packet_index = [data[1] for data in packet_data]
+
+        # 获取ip地址以判断包方向
+        if 'ip.addr' in value.extension.keys():
+            packet_ip = value.extension['ip.addr']
+        elif 'ipv6.addr' in value.extension.keys():
+            packet_ip = value.extension['ipv6.addr']
+        else:
+            print(label_pcap)
+            print("no ip address in this flow.")
+            return -1
+        packet_direction = [1]
+        for i in range(1, len(packet_ip)):
+            if packet_ip[i][0] != packet_ip[i-1][0]:
+                packet_direction.append(packet_direction[-1] + 1)
+            else:
+                packet_direction.append(packet_direction[-1])
+        packet_direction = [packet_direction[idx] for idx in packet_index]
+        break
+
+    # if len(packet_direction) == len(packets):
+    
+    burst_data_string = ''
+    
+    burst_txt = ''
+    packet_count = -1
+    
+    for packet_index in range(len(packet_direction)):
+        packet_count += 1
+        packet_data = packets[packet_index].copy()
+        data = (binascii.hexlify(bytes(packet_data)))
+        
+        packet_string = data.decode()[76:]
+        
+        if packet_index == 0:
+            burst_data_string += packet_string
+        else:
+            if packet_direction[packet_index] != packet_direction[packet_index - 1]:
+                burst_strings.append(bigram_generation(burst_data_string, packet_len=payload_len, flag=True))
+                burst_data_string = ''
+                packet_count = 0
+            else:
+                # 超过设定的包数量时，跳过后续同向包
+                if packet_count >= payload_pac:
+                    continue
+            
+            burst_data_string += packet_string
+            if packet_index == len(packets) - 1:
+                burst_strings.append(bigram_generation(burst_data_string, packet_len=payload_len, flag=True))
+        
+    feature_data.append(burst_strings)
+    return feature_data
 
 def get_feature_packet(label_pcap,payload_len):
     feature_data = []
@@ -390,8 +458,11 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                 
                 if splitcap:
                     for file in ff:
-                        session_path = (split_cap(pcap_path, p + "\\" + file, file.split(".")[-2], dir, dataset_level = dataset_level))
-                    session_pcap_path[dir] = pcap_path + "\\splitcap\\" + dir
+                        session_path = (split_cap(pcap_path, p + "\\" + file, file.split(".")[-2], '', dataset_level = dataset_level))
+                    if "splitcap" in pcap_path:
+                        session_pcap_path[dir] = pcap_path + dir
+                    else:
+                        session_pcap_path[dir] = pcap_path + "\\splitcap\\" + dir
                 else:
                     session_pcap_path[dir] = pcap_path + dir
         break
@@ -399,6 +470,9 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
     label_id = {}
     for index in range(len(label_name_list)):
         label_id[label_name_list[index]] = index
+    print("\nSava label_id to json file.")
+    with open(os.path.dirname(os.path.normpath(dataset_save_path)) + "\\label_id.json", "w") as f:
+        json.dump(label_id, fp=f, ensure_ascii=False, indent=4)
 
     r_file_record = []
     print("\nBegin to generate features.")
@@ -425,6 +499,22 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                     "time": {},
                     "direction": {},
                     "message_type": {}
+                }
+        elif dataset_level == "burst":
+            if splitcap:
+                for p, d, f in os.walk(session_pcap_path[key]):
+                    # 一种流量中的多个流量
+                    for file in f:
+                        file_size = float(size_format(os.path.getsize(p + "\\" + file)))
+                        # 2KB
+                        if file_size < 0:
+                            os.remove(p + "\\" + file)
+                            print("remove sample: %s for its size is less than 0 KB." % (p + "\\" + file))
+
+            if label_id[key] not in dataset:
+                dataset[label_id[key]] = {
+                    "samples": 0,
+                    "payload": {}
                 }
         elif dataset_level == "packet":
             if splitcap:# not splitcap
@@ -458,8 +548,8 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                     "samples": 0,
                     "payload": {}
                 }
-        if splitcap:
-            continue
+        # if splitcap:
+        #     continue
 
         target_all_files = [x[0] + "\\" + y for x in [(p, f) for p, d, f in os.walk(session_pcap_path[key])] for y in x[1]]
         r_files = random.sample(target_all_files, samples[label_count])
@@ -467,14 +557,17 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
         for r_f in r_files:
             if dataset_level == "flow":
                 feature_data = get_feature_flow(r_f, payload_len=payload_length, payload_pac=payload_packet)
+            elif dataset_level == "burst":
+                feature_data = get_feature_burst(r_f, payload_len=payload_length, payload_pac=payload_packet)
             elif dataset_level == "packet":
                 feature_data = get_feature_packet(r_f, payload_len=payload_length)
 
             if feature_data == -1:
                 continue
             r_file_record.append(r_f)
-            dataset[label_id[key]]["samples"] += 1
-            if len(dataset[label_id[key]]["payload"].keys()) > 0:
+            if dataset_level != "burst":
+                dataset[label_id[key]]["samples"] += 1
+            # if len(dataset[label_id[key]]["payload"].keys()) > 0:
                 dataset[label_id[key]]["payload"][str(dataset[label_id[key]]["samples"])] = \
                     feature_data[0]
                 if dataset_level == "flow":
@@ -487,12 +580,17 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
                     dataset[label_id[key]]["message_type"][str(dataset[label_id[key]]["samples"])] = \
                         feature_data[4]
             else:
-                dataset[label_id[key]]["payload"]["1"] = feature_data[0]
-                if dataset_level == "flow":
-                    dataset[label_id[key]]["length"]["1"] = feature_data[1]
-                    dataset[label_id[key]]["time"]["1"] = feature_data[2]
-                    dataset[label_id[key]]["direction"]["1"] = feature_data[3]
-                    dataset[label_id[key]]["message_type"]["1"] = feature_data[4]
+                for burst_index in range(len(feature_data[0])):
+                    dataset[label_id[key]]["samples"] += 1
+                    dataset[label_id[key]]["payload"][str(dataset[label_id[key]]["samples"])] = \
+                        feature_data[0][burst_index]
+            # else:
+            #     dataset[label_id[key]]["payload"]["1"] = feature_data[0]
+            #     if dataset_level == "flow":
+            #         dataset[label_id[key]]["length"]["1"] = feature_data[1]
+            #         dataset[label_id[key]]["time"]["1"] = feature_data[2]
+            #         dataset[label_id[key]]["direction"]["1"] = feature_data[3]
+            #         dataset[label_id[key]]["message_type"]["1"] = feature_data[4]
 
     all_data_number = 0
     for index in range(len(label_name_list)):
@@ -512,7 +610,7 @@ def generation(pcap_path, samples, features, splitcap = False, payload_length = 
 
 def read_data_from_json(json_data, features, samples):
     X,Y = [], []
-    ablation_flag = 0
+    ablation_flag = 1
     for feature_index in range(len(features)):
         x = []
         label_count = 0
@@ -523,14 +621,14 @@ def read_data_from_json(json_data, features, samples):
                     y = [label] * sample_num
                     Y.append(y)
                 else:
-                    if sample_num > 1500:
-                        y = [label] * 1500
+                    if sample_num > max(samples):
+                        y = [label] * max(samples)
                     else:
                         y = [label] * sample_num
                     Y.append(y)
-            if samples[label_count] < sample_num:
+            if max(samples) < sample_num:
                 x_label = []
-                for sample_index in random.sample(list(json_data[label][features[feature_index]].keys()),1500):
+                for sample_index in random.sample(list(json_data[label][features[feature_index]].keys()), max(samples)):
                     x_label.append(json_data[label][features[feature_index]][sample_index])
                 x.append(x_label)
             else:
